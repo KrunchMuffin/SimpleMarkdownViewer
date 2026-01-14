@@ -1,8 +1,14 @@
 # Simple Markdown Viewer
 
-A lightweight, fast markdown viewer for Windows built with Avalonia UI and WebView2.
+A lightweight, fast markdown viewer built with Avalonia UI.
 
 ![Screenshot](screenshot.png)
+
+## Download
+
+**Windows:** Grab the latest installer from [Releases](https://github.com/KrunchMuffin/SimpleMarkdownViewer/releases).
+
+**Mac/Linux:** Build from source (see below).
 
 ## Features
 
@@ -16,13 +22,13 @@ A lightweight, fast markdown viewer for Windows built with Avalonia UI and WebVi
 - **Clipboard Paste** - Create a preview from clipboard content (Ctrl+Shift+V)
 - **Recent Files** - Quick access to recently opened files
 - **Print/PDF** - Print or save as PDF via system dialog
-- **File Association** - Register as default .md viewer
+- **File Association** - Register as default .md viewer (Windows)
 
 ## Keyboard Shortcuts
 
 | Shortcut | Action |
 |----------|--------|
-| Ctrl+O | Open file |
+| Ctrl+O (Cmd+O on Mac) | Open file |
 | Ctrl+Shift+V | New from clipboard |
 | Ctrl+W | Close tab |
 | Ctrl+Shift+C | Copy markdown to clipboard |
@@ -30,38 +36,63 @@ A lightweight, fast markdown viewer for Windows built with Avalonia UI and WebVi
 | F5 | Refresh |
 | F12 | Dev tools |
 
-## Requirements
-
-- Windows 10/11
-- [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (usually pre-installed on Windows 10/11)
-
 ## Building from Source
 
 ### Prerequisites
 
 - [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
 
-### Build
+### Clone and Build
 
 ```bash
-git clone https://github.com/yourusername/SimpleMarkdownViewer.git
+git clone https://github.com/KrunchMuffin/SimpleMarkdownViewer.git
 cd SimpleMarkdownViewer
 dotnet build
-```
-
-### Run
-
-```bash
 dotnet run
 ```
 
-### Publish (self-contained exe)
+### Publish
 
+#### Windows
 ```bash
 dotnet publish -c Release -r win-x64 --self-contained -o publish
 ```
 
-## File Association
+#### macOS (Intel)
+```bash
+dotnet publish -c Release -r osx-x64 --self-contained -o publish
+```
+
+#### macOS (Apple Silicon)
+```bash
+dotnet publish -c Release -r osx-arm64 --self-contained -o publish
+```
+
+#### Linux
+```bash
+dotnet publish -c Release -r linux-x64 --self-contained -o publish
+```
+
+### Platform Notes
+
+- **Windows:** WebView2 runtime required (pre-installed on Windows 10/11)
+- **macOS:** Uses WKWebView (built into macOS)
+- **Linux:** Requires WebKitGTK. Install with:
+  - Ubuntu/Debian: `sudo apt install libwebkit2gtk-4.1`
+  - Fedora: `sudo dnf install webkit2gtk4.1`
+  - Arch: `sudo pacman -S webkit2gtk-4.1`
+
+> **Note:** Mac and Linux builds are untested. If you encounter issues, please open an issue on GitHub.
+
+## Windows Installer
+
+To build the Windows installer yourself:
+
+1. Install [Inno Setup 6](https://jrsoftware.org/isdl.php)
+2. Run `build-installer.bat`
+3. Installer will be in the `installer` folder
+
+## File Association (Windows)
 
 To register as the default handler for `.md` files:
 
@@ -73,25 +104,11 @@ To unregister, run `unregister-file-association.reg`.
 ## Tech Stack
 
 - [Avalonia UI](https://avaloniaui.net/) - Cross-platform .NET UI framework
-- [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) - Chromium-based web view
+- [WebView.Avalonia](https://github.com/AvaloniaCommunity/WebView.Avalonia) - Cross-platform web view
 - [Markdig](https://github.com/xoofx/markdig) - Markdown parser
 - [highlight.js](https://highlightjs.org/) - Syntax highlighting
 - [Mermaid](https://mermaid.js.org/) - Diagrams
 - [KaTeX](https://katex.org/) - Math rendering
-
-## Download
-
-Grab the latest installer from [Releases](https://github.com/yourusername/SimpleMarkdownViewer/releases).
-
-Or build it yourself (see below).
-
-## Building the Installer
-
-To create the installer yourself:
-
-1. Install [Inno Setup 6](https://jrsoftware.org/isdl.php)
-2. Run `build-installer.bat`
-3. Installer will be in the `installer` folder
 
 ## License
 
