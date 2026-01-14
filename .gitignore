@@ -1,0 +1,37 @@
+# Build results
+bin/
+obj/
+publish/
+installer/
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+*.userprefs
+
+# Rider
+.idea/
+*.sln.iml
+
+# Build outputs
+*.dll
+*.exe
+*.pdb
+
+# NuGet
+packages/
+*.nupkg
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Project specific
+build_out.txt
+output.txt
+error.txt
+
+# Greenfish Icon Editor project (keep the exported ico)
+*.gfie

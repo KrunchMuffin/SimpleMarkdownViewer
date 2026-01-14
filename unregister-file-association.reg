@@ -1,0 +1,8 @@
+Windows Registry Editor Version 5.00
+
+; Remove file associations
+[-HKEY_CURRENT_USER\Software\Classes\.md]
+[-HKEY_CURRENT_USER\Software\Classes\.markdown]
+[-HKEY_CURRENT_USER\Software\Classes\.mdown]
+[-HKEY_CURRENT_USER\Software\Classes\.mkd]
+[-HKEY_CURRENT_USER\Software\Classes\SimpleMarkdownViewer.md]
