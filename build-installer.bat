@@ -26,6 +26,7 @@ echo.
 
 :: Try common Inno Setup locations
 set ISCC=""
+if exist "G:\Program Files (x86)\Inno Setup 6\ISCC.exe" set ISCC="G:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" set ISCC="C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 if exist "C:\Program Files\Inno Setup 6\ISCC.exe" set ISCC="C:\Program Files\Inno Setup 6\ISCC.exe"
 
@@ -56,6 +57,6 @@ echo ========================================
 echo BUILD COMPLETE!
 echo ========================================
 echo.
-echo Installer created: installer\SimpleMarkdownViewer-Setup-1.0.0.exe
+echo Installer created: installer\SimpleMarkdownViewer-Setup-1.0.1.exe
 echo.
 pause
