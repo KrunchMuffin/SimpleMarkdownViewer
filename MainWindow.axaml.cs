@@ -408,7 +408,6 @@ public partial class MainWindow : Window
     
     <link rel=""stylesheet"" href=""https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"">
     <script src=""https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js""></script>
-    <script src=""https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js""></script>
     
     <style>
         * {{ box-sizing: border-box; }}
@@ -512,13 +511,26 @@ public partial class MainWindow : Window
                 if (!block.closest('.mermaid')) hljs.highlightElement(block);
             }});
             
-            if (typeof renderMathInElement !== 'undefined') {{
-                renderMathInElement(document.body, {{
-                    delimiters: [
-                        {{left: '$$', right: '$$', display: true}},
-                        {{left: '$', right: '$', display: false}}
-                    ],
-                    throwOnError: false
+            // Render preprocessed math elements
+            if (typeof katex !== 'undefined') {{
+                document.querySelectorAll('.math-display').forEach((el) => {{
+                    try {{
+                        const math = el.getAttribute('data-math');
+                        if (math) {{
+                            // Decode HTML entities
+                            const decoded = new DOMParser().parseFromString(math, 'text/html').body.textContent;
+                            katex.render(decoded, el, {{ displayMode: true, throwOnError: false }});
+                        }}
+                    }} catch (e) {{ console.error('Math render error:', e); }}
+                }});
+                document.querySelectorAll('.math-inline').forEach((el) => {{
+                    try {{
+                        const math = el.getAttribute('data-math');
+                        if (math) {{
+                            const decoded = new DOMParser().parseFromString(math, 'text/html').body.textContent;
+                            katex.render(decoded, el, {{ displayMode: false, throwOnError: false }});
+                        }}
+                    }} catch (e) {{ console.error('Math render error:', e); }}
                 }});
             }}
         }}
@@ -836,7 +848,7 @@ public partial class MainWindow : Window
             Spacing = 8
         };
         info.Children.Add(new TextBlock { Text = "Simple Markdown Viewer", FontSize = 20, FontWeight = Avalonia.Media.FontWeight.Bold, HorizontalAlignment = HorizontalAlignment.Center });
-        info.Children.Add(new TextBlock { Text = "Version 1.0.0", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
+        info.Children.Add(new TextBlock { Text = "Version 1.0.1", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "A lightweight markdown viewer with\nlive reload, tabs, and dark mode.", TextAlignment = Avalonia.Media.TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "Built with Avalonia UI, WebView2, and Markdig", FontSize = 11, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
         
@@ -934,6 +946,7 @@ public partial class MainWindow : Window
         {
             var markdown = await File.ReadAllTextAsync(tab.FilePath);
             markdown = PreprocessMermaid(markdown);
+            markdown = PreprocessMath(markdown);
             
             var htmlContent = Markdown.ToHtml(markdown, _pipeline);
             var template = GetTemplate();
@@ -973,6 +986,32 @@ public partial class MainWindow : Window
             m => $"<div class=\"mermaid\">\n{m.Groups[1].Value}</div>",
             System.Text.RegularExpressions.RegexOptions.Multiline
         );
+    }
+
+    private string PreprocessMath(string markdown)
+    {
+        // Process display math first ($...$) to avoid conflicts with inline
+        markdown = System.Text.RegularExpressions.Regex.Replace(
+            markdown,
+            @"\$\$([\s\S]*?)\$\$",
+            m => {
+                var math = System.Web.HttpUtility.HtmlEncode(m.Groups[1].Value.Trim());
+                return $"<div class=\"math-display\" data-math=\"{math}\"></div>";
+            },
+            System.Text.RegularExpressions.RegexOptions.Multiline
+        );
+        
+        // Process inline math ($...$) - use negative lookbehind/ahead to avoid matching $
+        markdown = System.Text.RegularExpressions.Regex.Replace(
+            markdown,
+            @"(?<!\$)\$(?!\$)([^$\n]+?)(?<!\$)\$(?!\$)",
+            m => {
+                var math = System.Web.HttpUtility.HtmlEncode(m.Groups[1].Value.Trim());
+                return $"<span class=\"math-inline\" data-math=\"{math}\"></span>";
+            }
+        );
+        
+        return markdown;
     }
 
     protected override void OnClosed(EventArgs e)
