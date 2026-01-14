@@ -1,0 +1,27 @@
+Windows Registry Editor Version 5.00
+
+; File association for .md files
+[HKEY_CURRENT_USER\Software\Classes\.md]
+@="SimpleMarkdownViewer.md"
+
+[HKEY_CURRENT_USER\Software\Classes\.markdown]
+@="SimpleMarkdownViewer.md"
+
+[HKEY_CURRENT_USER\Software\Classes\.mdown]
+@="SimpleMarkdownViewer.md"
+
+[HKEY_CURRENT_USER\Software\Classes\.mkd]
+@="SimpleMarkdownViewer.md"
+
+[HKEY_CURRENT_USER\Software\Classes\SimpleMarkdownViewer.md]
+@="Markdown File"
+
+[HKEY_CURRENT_USER\Software\Classes\SimpleMarkdownViewer.md\DefaultIcon]
+@="F:\\SimpleMarkdownViewer\\bin\\Debug\\net8.0\\SimpleMarkdownViewer.exe,0"
+
+[HKEY_CURRENT_USER\Software\Classes\SimpleMarkdownViewer.md\shell]
+
+[HKEY_CURRENT_USER\Software\Classes\SimpleMarkdownViewer.md\shell\open]
+
+[HKEY_CURRENT_USER\Software\Classes\SimpleMarkdownViewer.md\shell\open\command]
+@="\"F:\\SimpleMarkdownViewer\\bin\\Debug\\net8.0\\SimpleMarkdownViewer.exe\" \"%1\""
