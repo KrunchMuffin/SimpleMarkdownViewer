@@ -11,7 +11,8 @@ if exist publish rmdir /s /q publish
 if exist installer rmdir /s /q installer
 
 echo [2/3] Publishing application...
-"C:\Program Files\dotnet\dotnet.exe" publish -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+:: Note: Single-file publishing disabled - causes WebView2 stack overflow crash
+"C:\Program Files\dotnet\dotnet.exe" publish -c Release -r win-x64 --self-contained -o publish
 
 if %ERRORLEVEL% NEQ 0 (
     echo.
@@ -57,6 +58,6 @@ echo ========================================
 echo BUILD COMPLETE!
 echo ========================================
 echo.
-echo Installer created: installer\SimpleMarkdownViewer-Setup-1.0.1.exe
+echo Installer created: installer\SimpleMarkdownViewer-Setup-1.0.3.exe
 echo.
 pause
