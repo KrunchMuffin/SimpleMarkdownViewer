@@ -44,7 +44,7 @@
         </Border>
         
         <!-- Single WebView -->
-        <wv:WebView x:Name="WebView" Url="about:blank"/>
+        <wv:WebView x:Name="WebView" Url="about:blank" Focusable="True"/>
     </DockPanel>
     
 </Window>

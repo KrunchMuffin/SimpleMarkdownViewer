@@ -9,9 +9,9 @@
     <ApplicationIcon>app-icon.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <LangVersion>latest</LangVersion>
-    <Version>1.0.1</Version>
-    <AssemblyVersion>1.0.1.0</AssemblyVersion>
-    <FileVersion>1.0.1.0</FileVersion>
+    <Version>1.0.2</Version>
+    <AssemblyVersion>1.0.2.0</AssemblyVersion>
+    <FileVersion>1.0.2.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -27,6 +27,7 @@
     
     <!-- Markdown parsing -->
     <PackageReference Include="Markdig" Version="0.38.0" />
+    <PackageReference Include="WebView.Avalonia.Windows" Version="11.0.0.1" />
   </ItemGroup>
 
   <ItemGroup>
