@@ -78,7 +78,7 @@ public partial class MainWindow : Window
             }
         }
         catch { }
-        
+
         // Apply theme
         ApplyTheme();
     }
@@ -173,7 +173,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        
+
         _webView = this.FindControl<WebView>("WebView")!;
         _statusText = this.FindControl<TextBlock>("StatusText")!;
         _statusBar = this.FindControl<Border>("StatusBar")!;
@@ -182,11 +182,11 @@ public partial class MainWindow : Window
         _themeMenuItem = this.FindControl<MenuItem>("ThemeMenuItem")!;
         _mainPanel = this.FindControl<DockPanel>("MainPanel")!;
         _recentMenu = this.FindControl<MenuItem>("RecentMenu")!;
-        
+
         // Load settings
         LoadSettings();
         UpdateRecentMenu();
-        
+
         // Configure Markdig
         _pipeline = new MarkdownPipelineBuilder()
             .UseAdvancedExtensions()
@@ -194,20 +194,20 @@ public partial class MainWindow : Window
             .UseTaskLists()
             .UseDiagrams()
             .Build();
-        
+
         // Wire up WebView events
         _webView.WebViewCreated += OnWebViewCreated;
         _webView.NavigationStarting += OnNavigationStarting;
         _webView.NavigationCompleted += OnNavigationCompleted;
-        
+
         // Show welcome page after window loads
         this.Loaded += OnWindowLoaded;
         this.KeyDown += OnKeyDown;
-        
+
         // Enable drag and drop (use Tunnel to intercept before WebView)
         AddHandler(DragDrop.DropEvent, OnDrop, RoutingStrategies.Tunnel);
         AddHandler(DragDrop.DragOverEvent, OnDragOver, RoutingStrategies.Tunnel);
-        
+
         // Handle command line args
         var args = Environment.GetCommandLineArgs();
         if (args.Length > 1 && File.Exists(args[1]))
@@ -220,7 +220,7 @@ public partial class MainWindow : Window
     {
         // Give WebView time to initialize
         await Task.Delay(500);
-        
+
         if (_tabs.Count == 0)
         {
             _webViewReady = true;
@@ -306,7 +306,7 @@ public partial class MainWindow : Window
     {
         _webViewReady = true;
         _statusText.Text = "Ready - Open a markdown file (Ctrl+O)";
-        
+
         if (_pendingHtml != null)
         {
             RenderHtml(_pendingHtml);
@@ -341,7 +341,7 @@ public partial class MainWindow : Window
     private void OnNavigationStarting(object? sender, WebViewCore.Events.WebViewUrlLoadingEventArg e)
     {
         var url = e.Url?.ToString() ?? "";
-        
+
         // Check if this is a file being dragged onto WebView
         if (url.StartsWith("file:///", StringComparison.OrdinalIgnoreCase))
         {
@@ -848,7 +848,7 @@ public partial class MainWindow : Window
             Spacing = 8
         };
         info.Children.Add(new TextBlock { Text = "Simple Markdown Viewer", FontSize = 20, FontWeight = Avalonia.Media.FontWeight.Bold, HorizontalAlignment = HorizontalAlignment.Center });
-        info.Children.Add(new TextBlock { Text = "Version 1.0.1", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
+        info.Children.Add(new TextBlock { Text = "Version 1.0.2", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "A lightweight markdown viewer with\nlive reload, tabs, and dark mode.", TextAlignment = Avalonia.Media.TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "Built with Avalonia UI, WebView2, and Markdig", FontSize = 11, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
         
@@ -958,19 +958,23 @@ public partial class MainWindow : Window
         }
     }
 
-    private void RenderHtml(string html)
+    private async void RenderHtml(string html)
     {
         if (!_webViewReady)
         {
             _pendingHtml = html;
             return;
         }
-        
+
         try
         {
             var tempPath = Path.Combine(Path.GetTempPath(), $"mdviewer_current_{Guid.NewGuid():N}.html");
             File.WriteAllText(tempPath, html);
             _webView.Url = new Uri(tempPath);
+
+            // Force focus and visual update after navigation
+            await Task.Delay(100);
+            _webView.Focus();
         }
         catch (Exception ex)
         {
@@ -990,23 +994,23 @@ public partial class MainWindow : Window
 
     private string PreprocessMath(string markdown)
     {
-        // Process display math first ($...$) to avoid conflicts with inline
+        // Process display math first ($...$)
         markdown = System.Text.RegularExpressions.Regex.Replace(
             markdown,
-            @"\$\$([\s\S]*?)\$\$",
+            @"\$\$(.+?)\$\$",
             m => {
-                var math = System.Web.HttpUtility.HtmlEncode(m.Groups[1].Value.Trim());
+                var math = System.Net.WebUtility.HtmlEncode(m.Groups[1].Value.Trim());
                 return $"<div class=\"math-display\" data-math=\"{math}\"></div>";
             },
-            System.Text.RegularExpressions.RegexOptions.Multiline
+            System.Text.RegularExpressions.RegexOptions.Singleline
         );
         
-        // Process inline math ($...$) - use negative lookbehind/ahead to avoid matching $
+        // Process inline math ($...$) - simple pattern, non-greedy
         markdown = System.Text.RegularExpressions.Regex.Replace(
             markdown,
-            @"(?<!\$)\$(?!\$)([^$\n]+?)(?<!\$)\$(?!\$)",
+            @"(?<!\$)\$([^$\n]+?)\$(?!\$)",
             m => {
-                var math = System.Web.HttpUtility.HtmlEncode(m.Groups[1].Value.Trim());
+                var math = System.Net.WebUtility.HtmlEncode(m.Groups[1].Value.Trim());
                 return $"<span class=\"math-inline\" data-math=\"{math}\"></span>";
             }
         );
