@@ -268,6 +268,7 @@ public partial class MainWindow : Window
 
     private void OnDragOver(object? sender, DragEventArgs e)
     {
+#pragma warning disable CS0618 // Type or member is obsolete
         if (e.Data.Contains(DataFormats.Files))
         {
             e.DragEffects = DragDropEffects.Copy;
@@ -277,15 +278,18 @@ public partial class MainWindow : Window
         {
             e.DragEffects = DragDropEffects.None;
         }
+#pragma warning restore CS0618
     }
 
     private async void OnDrop(object? sender, DragEventArgs e)
     {
+#pragma warning disable CS0618 // Type or member is obsolete
         if (!e.Data.Contains(DataFormats.Files)) return;
-        
+
         e.Handled = true;
-        
+
         var files = e.Data.GetFiles();
+#pragma warning restore CS0618
         if (files == null) return;
         
         var mdExtensions = new[] { ".md", ".markdown", ".mdown", ".mkd" };
@@ -302,10 +306,18 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnWebViewCreated(object? sender, WebViewCreatedEventArgs e)
+    private async void OnWebViewCreated(object? sender, WebViewCreatedEventArgs e)
     {
         _webViewReady = true;
         _statusText.Text = "Ready - Open a markdown file (Ctrl+O)";
+
+        // Set WebView background color to match theme (fixes dark mode initial render)
+        try
+        {
+            var bgColor = _isDarkMode ? "#0d1117" : "#ffffff";
+            await _webView.ExecuteScriptAsync($"document.body.style.backgroundColor = '{bgColor}';");
+        }
+        catch { /* Ignore if not ready */ }
 
         if (_pendingHtml != null)
         {
@@ -316,6 +328,14 @@ public partial class MainWindow : Window
         {
             // Show welcome page
             RenderHtml(GetWelcomePage());
+        }
+
+        // Force re-render after short delay to fix WebView2 dark mode rendering issue
+        if (_isDarkMode)
+        {
+            await Task.Delay(50);
+            var cachedHtml = _tabs.Count > 0 && _selectedTabIndex >= 0 ? _tabs[_selectedTabIndex].CachedHtml : null;
+            RenderHtml(cachedHtml ?? GetWelcomePage());
         }
     }
 
@@ -400,6 +420,7 @@ public partial class MainWindow : Window
     <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
     
     <script src=""https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js""></script>
+    <script src=""https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js""></script>
     <link rel=""stylesheet"" href=""https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/{hljsTheme}.min.css"">
     <script src=""https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js""></script>
     <script src=""https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js""></script>
@@ -479,7 +500,92 @@ public partial class MainWindow : Window
         
         hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }}
         
-        .mermaid {{ text-align: center; margin: 16px 0; }}
+        .mermaid {{
+            text-align: center;
+            margin: 16px 0;
+            cursor: pointer;
+            position: relative;
+            border: 1px solid {borderColor};
+            border-radius: 6px;
+            padding: 16px;
+            transition: box-shadow 0.2s;
+        }}
+        .mermaid:hover {{
+            box-shadow: 0 0 8px {linkColor}40;
+        }}
+        .mermaid::after {{
+            content: '🔍 Click to expand';
+            position: absolute;
+            top: 4px;
+            right: 8px;
+            font-size: 11px;
+            color: {blockquoteColor};
+            opacity: 0;
+            transition: opacity 0.2s;
+        }}
+        .mermaid:hover::after {{
+            opacity: 1;
+        }}
+        .mermaid svg {{
+            max-width: 100%;
+            height: auto;
+        }}
+
+        /* Modal overlay for expanded diagrams */
+        .diagram-modal {{
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: {bgColor}f5;
+            z-index: 9999;
+            padding: 20px;
+        }}
+        .diagram-modal.active {{
+            display: flex;
+            flex-direction: column;
+        }}
+        .diagram-modal-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 20px;
+            border-bottom: 1px solid {borderColor};
+            flex-shrink: 0;
+        }}
+        .diagram-modal-title {{
+            font-weight: 600;
+            color: {headingColor};
+        }}
+        .diagram-modal-controls {{
+            display: flex;
+            gap: 8px;
+        }}
+        .diagram-modal-controls button {{
+            padding: 6px 12px;
+            border: 1px solid {borderColor};
+            border-radius: 4px;
+            background: {codeBg};
+            color: {textColor};
+            cursor: pointer;
+            font-size: 14px;
+        }}
+        .diagram-modal-controls button:hover {{
+            background: {borderColor};
+        }}
+        .diagram-modal-content {{
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }}
+        .diagram-modal-content svg {{
+            max-width: none !important;
+            max-height: none !important;
+        }}
         
         kbd {{
             display: inline-block;
@@ -496,28 +602,51 @@ public partial class MainWindow : Window
     <article id=""content"">
         {{{{CONTENT}}}}
     </article>
+
+    <!-- Modal for expanded diagrams -->
+    <div id=""diagramModal"" class=""diagram-modal"">
+        <div class=""diagram-modal-header"">
+            <span class=""diagram-modal-title"">Diagram Viewer</span>
+            <div class=""diagram-modal-controls"">
+                <button onclick=""zoomIn()"">Zoom +</button>
+                <button onclick=""zoomOut()"">Zoom -</button>
+                <button onclick=""resetZoom()"">Reset</button>
+                <button onclick=""fitDiagram()"">Fit</button>
+                <button onclick=""closeModal()"">✕ Close (Esc)</button>
+            </div>
+        </div>
+        <div class=""diagram-modal-content"" id=""modalContent""></div>
+    </div>
     
     <script>
+        let modalPanZoom = null;
+
         function renderContent() {{
-            mermaid.initialize({{ 
-                startOnLoad: false, 
+            mermaid.initialize({{
+                startOnLoad: false,
                 theme: '{mermaidTheme}',
                 securityLevel: 'loose'
             }});
-            
+
             try {{ mermaid.run({{ querySelector: '.mermaid' }}); }} catch (e) {{ console.error(e); }}
-            
+
+            // Add click handlers to mermaid diagrams for expand
+            setTimeout(() => {{
+                document.querySelectorAll('.mermaid').forEach((el, index) => {{
+                    el.addEventListener('click', () => openDiagramModal(el, index));
+                }});
+            }}, 500);
+
             document.querySelectorAll('pre code').forEach((block) => {{
                 if (!block.closest('.mermaid')) hljs.highlightElement(block);
             }});
-            
+
             // Render preprocessed math elements
             if (typeof katex !== 'undefined') {{
                 document.querySelectorAll('.math-display').forEach((el) => {{
                     try {{
                         const math = el.getAttribute('data-math');
                         if (math) {{
-                            // Decode HTML entities
                             const decoded = new DOMParser().parseFromString(math, 'text/html').body.textContent;
                             katex.render(decoded, el, {{ displayMode: true, throwOnError: false }});
                         }}
@@ -534,7 +663,80 @@ public partial class MainWindow : Window
                 }});
             }}
         }}
-        
+
+        function openDiagramModal(mermaidEl, index) {{
+            const modal = document.getElementById('diagramModal');
+            const content = document.getElementById('modalContent');
+            const svg = mermaidEl.querySelector('svg');
+
+            if (!svg) return;
+
+            // Clone the SVG for the modal (safe - cloning existing DOM element)
+            const svgClone = svg.cloneNode(true);
+            svgClone.id = 'modalSvg';
+            svgClone.style.width = '100%';
+            svgClone.style.height = '100%';
+
+            // Clear and append using DOM methods (safe)
+            while (content.firstChild) {{
+                content.removeChild(content.firstChild);
+            }}
+            content.appendChild(svgClone);
+            modal.classList.add('active');
+
+            // Initialize pan-zoom after a brief delay
+            setTimeout(() => {{
+                if (modalPanZoom) {{
+                    modalPanZoom.destroy();
+                }}
+                modalPanZoom = svgPanZoom('#modalSvg', {{
+                    zoomEnabled: true,
+                    controlIconsEnabled: false,
+                    fit: true,
+                    center: true,
+                    minZoom: 0.1,
+                    maxZoom: 20,
+                    zoomScaleSensitivity: 0.3
+                }});
+            }}, 100);
+        }}
+
+        function closeModal() {{
+            const modal = document.getElementById('diagramModal');
+            modal.classList.remove('active');
+            if (modalPanZoom) {{
+                modalPanZoom.destroy();
+                modalPanZoom = null;
+            }}
+        }}
+
+        function zoomIn() {{
+            if (modalPanZoom) modalPanZoom.zoomIn();
+        }}
+
+        function zoomOut() {{
+            if (modalPanZoom) modalPanZoom.zoomOut();
+        }}
+
+        function resetZoom() {{
+            if (modalPanZoom) {{
+                modalPanZoom.resetZoom();
+                modalPanZoom.center();
+            }}
+        }}
+
+        function fitDiagram() {{
+            if (modalPanZoom) {{
+                modalPanZoom.fit();
+                modalPanZoom.center();
+            }}
+        }}
+
+        // Close modal with Escape key
+        document.addEventListener('keydown', (e) => {{
+            if (e.key === 'Escape') closeModal();
+        }});
+
         document.addEventListener('DOMContentLoaded', renderContent);
     </script>
 </body>
@@ -578,7 +780,9 @@ public partial class MainWindow : Window
                 return;
             }
             
+#pragma warning disable CS0618 // Type or member is obsolete
             var text = await clipboard.GetTextAsync();
+#pragma warning restore CS0618
             if (string.IsNullOrWhiteSpace(text))
             {
                 _statusText.Text = "Clipboard is empty or contains no text";
@@ -955,6 +1159,14 @@ public partial class MainWindow : Window
                     mermaidBlocks.Add(m.Groups[1].Value);
                     return $"<!--MERMAID_PLACEHOLDER_{mermaidBlocks.Count - 1}-->";
                 },
+                System.Text.RegularExpressions.RegexOptions.Multiline
+            );
+
+            // Ensure tables have a blank line before them (for Markdig compatibility)
+            markdown = System.Text.RegularExpressions.Regex.Replace(
+                markdown,
+                @"(\n[^\n\|]+)\n(\|[^\n]+\|)",
+                "$1\n\n$2",
                 System.Text.RegularExpressions.RegexOptions.Multiline
             );
 
