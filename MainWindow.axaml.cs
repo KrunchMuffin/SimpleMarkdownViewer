@@ -945,10 +945,32 @@ public partial class MainWindow : Window
         try
         {
             var markdown = await File.ReadAllTextAsync(tab.FilePath);
-            markdown = PreprocessMermaid(markdown);
+
+            // Extract Mermaid blocks BEFORE Markdig processing to protect from typography transforms
+            var mermaidBlocks = new List<string>();
+            markdown = System.Text.RegularExpressions.Regex.Replace(
+                markdown,
+                @"```mermaid\s*\n([\s\S]*?)```",
+                m => {
+                    mermaidBlocks.Add(m.Groups[1].Value);
+                    return $"<!--MERMAID_PLACEHOLDER_{mermaidBlocks.Count - 1}-->";
+                },
+                System.Text.RegularExpressions.RegexOptions.Multiline
+            );
+
             markdown = PreprocessMath(markdown);
-            
+
             var htmlContent = Markdown.ToHtml(markdown, _pipeline);
+
+            // Restore Mermaid blocks AFTER Markdig processing
+            for (int i = 0; i < mermaidBlocks.Count; i++)
+            {
+                htmlContent = htmlContent.Replace(
+                    $"<!--MERMAID_PLACEHOLDER_{i}-->",
+                    $"<div class=\"mermaid\">\n{mermaidBlocks[i]}</div>"
+                );
+            }
+
             var template = GetTemplate();
             tab.CachedHtml = template.Replace("{{CONTENT}}", htmlContent);
         }
@@ -982,15 +1004,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private string PreprocessMermaid(string markdown)
-    {
-        return System.Text.RegularExpressions.Regex.Replace(
-            markdown,
-            @"```mermaid\s*\n([\s\S]*?)```",
-            m => $"<div class=\"mermaid\">\n{m.Groups[1].Value}</div>",
-            System.Text.RegularExpressions.RegexOptions.Multiline
-        );
-    }
 
     private string PreprocessMath(string markdown)
     {
