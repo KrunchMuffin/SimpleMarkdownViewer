@@ -508,7 +508,7 @@ public partial class MainWindow : Window
             border: 1px solid {borderColor};
             border-radius: 6px;
             padding: 16px;
-            transition: box-shadow 0.2s;
+            transition: box-shadow 0.2s, transform 0.3s, top 0.3s, left 0.3s, width 0.3s, height 0.3s;
         }}
         .mermaid:hover {{
             box-shadow: 0 0 8px {linkColor}40;
@@ -531,60 +531,85 @@ public partial class MainWindow : Window
             height: auto;
         }}
 
-        /* Modal overlay for expanded diagrams */
-        .diagram-modal {{
+        /* Fullscreen mode for diagrams */
+        .mermaid.fullscreen {{
+            position: fixed !important;
+            top: 60px !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: calc(100vh - 60px) !important;
+            z-index: 10000 !important;
+            background: {bgColor} !important;
+            margin: 0 !important;
+            border-radius: 0 !important;
+            border: none !important;
+            padding: 20px !important;
+            overflow: auto !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }}
+        .mermaid.fullscreen::after {{
+            display: none;
+        }}
+        .mermaid.fullscreen svg {{
+            max-width: none !important;
+            max-height: none !important;
+            transform-origin: center center;
+        }}
+
+        /* Fullscreen controls bar */
+        .fullscreen-controls {{
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 60px;
+            background: {codeBg};
+            border-bottom: 1px solid {borderColor};
+            z-index: 10001;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+        }}
+        .fullscreen-controls.active {{
+            display: flex;
+        }}
+        .fullscreen-controls-title {{
+            font-weight: 600;
+            color: {headingColor};
+        }}
+        .fullscreen-controls-buttons {{
+            display: flex;
+            gap: 8px;
+        }}
+        .fullscreen-controls button {{
+            padding: 8px 16px;
+            border: 1px solid {borderColor};
+            border-radius: 4px;
+            background: {bgColor};
+            color: {textColor};
+            cursor: pointer;
+            font-size: 14px;
+        }}
+        .fullscreen-controls button:hover {{
+            background: {borderColor};
+        }}
+
+        /* Overlay behind fullscreen diagram */
+        .fullscreen-overlay {{
             display: none;
             position: fixed;
             top: 0;
             left: 0;
             width: 100vw;
             height: 100vh;
-            background: {bgColor}f5;
+            background: {bgColor};
             z-index: 9999;
-            padding: 20px;
         }}
-        .diagram-modal.active {{
-            display: flex;
-            flex-direction: column;
-        }}
-        .diagram-modal-header {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 20px;
-            border-bottom: 1px solid {borderColor};
-            flex-shrink: 0;
-        }}
-        .diagram-modal-title {{
-            font-weight: 600;
-            color: {headingColor};
-        }}
-        .diagram-modal-controls {{
-            display: flex;
-            gap: 8px;
-        }}
-        .diagram-modal-controls button {{
-            padding: 6px 12px;
-            border: 1px solid {borderColor};
-            border-radius: 4px;
-            background: {codeBg};
-            color: {textColor};
-            cursor: pointer;
-            font-size: 14px;
-        }}
-        .diagram-modal-controls button:hover {{
-            background: {borderColor};
-        }}
-        .diagram-modal-content {{
-            flex: 1;
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }}
-        .diagram-modal-content svg {{
-            max-width: none !important;
-            max-height: none !important;
+        .fullscreen-overlay.active {{
+            display: block;
         }}
         
         kbd {{
@@ -603,23 +628,26 @@ public partial class MainWindow : Window
         {{{{CONTENT}}}}
     </article>
 
-    <!-- Modal for expanded diagrams -->
-    <div id=""diagramModal"" class=""diagram-modal"">
-        <div class=""diagram-modal-header"">
-            <span class=""diagram-modal-title"">Diagram Viewer</span>
-            <div class=""diagram-modal-controls"">
-                <button onclick=""zoomIn()"">Zoom +</button>
-                <button onclick=""zoomOut()"">Zoom -</button>
-                <button onclick=""resetZoom()"">Reset</button>
-                <button onclick=""fitDiagram()"">Fit</button>
-                <button onclick=""closeModal()"">✕ Close (Esc)</button>
-            </div>
+    <!-- Fullscreen overlay and controls -->
+    <div id=""fullscreenOverlay"" class=""fullscreen-overlay""></div>
+    <div id=""fullscreenControls"" class=""fullscreen-controls"">
+        <span class=""fullscreen-controls-title"">Diagram Viewer</span>
+        <div class=""fullscreen-controls-buttons"">
+            <button onclick=""zoomIn()"">Zoom +</button>
+            <button onclick=""zoomOut()"">Zoom -</button>
+            <button onclick=""resetZoom()"">Reset</button>
+            <button onclick=""fitToPage()"">Fit</button>
+            <button onclick=""closeFullscreen()"">✕ Close (Esc)</button>
         </div>
-        <div class=""diagram-modal-content"" id=""modalContent""></div>
     </div>
     
     <script>
-        let modalPanZoom = null;
+        let currentFullscreenEl = null;
+        let currentZoom = 1;
+        let panX = 0, panY = 0;
+        let isDragging = false;
+        let dragStartX = 0, dragStartY = 0;
+        let panStartX = 0, panStartY = 0;
 
         function renderContent() {{
             mermaid.initialize({{
@@ -630,10 +658,14 @@ public partial class MainWindow : Window
 
             try {{ mermaid.run({{ querySelector: '.mermaid' }}); }} catch (e) {{ console.error(e); }}
 
-            // Add click handlers to mermaid diagrams for expand
+            // Add click handlers to mermaid diagrams for fullscreen
             setTimeout(() => {{
-                document.querySelectorAll('.mermaid').forEach((el, index) => {{
-                    el.addEventListener('click', () => openDiagramModal(el, index));
+                document.querySelectorAll('.mermaid').forEach((el) => {{
+                    el.addEventListener('click', (e) => {{
+                        if (!el.classList.contains('fullscreen')) {{
+                            openFullscreen(el);
+                        }}
+                    }});
                 }});
             }}, 500);
 
@@ -664,77 +696,154 @@ public partial class MainWindow : Window
             }}
         }}
 
-        function openDiagramModal(mermaidEl, index) {{
-            const modal = document.getElementById('diagramModal');
-            const content = document.getElementById('modalContent');
+        function openFullscreen(mermaidEl) {{
+            currentFullscreenEl = mermaidEl;
+            currentZoom = 1;
+            panX = 0;
+            panY = 0;
+
+            // Show overlay and controls
+            document.getElementById('fullscreenOverlay').classList.add('active');
+            document.getElementById('fullscreenControls').classList.add('active');
+
+            // Make the diagram fullscreen (no cloning - original element!)
+            mermaidEl.classList.add('fullscreen');
+
+            // Reset SVG transform and enable dragging cursor
             const svg = mermaidEl.querySelector('svg');
-
-            if (!svg) return;
-
-            // Clone the SVG for the modal (safe - cloning existing DOM element)
-            const svgClone = svg.cloneNode(true);
-            svgClone.id = 'modalSvg';
-            svgClone.style.width = '100%';
-            svgClone.style.height = '100%';
-
-            // Clear and append using DOM methods (safe)
-            while (content.firstChild) {{
-                content.removeChild(content.firstChild);
+            if (svg) {{
+                svg.style.transform = 'scale(1) translate(0px, 0px)';
+                svg.style.cursor = 'grab';
             }}
-            content.appendChild(svgClone);
-            modal.classList.add('active');
-
-            // Initialize pan-zoom after a brief delay
-            setTimeout(() => {{
-                if (modalPanZoom) {{
-                    modalPanZoom.destroy();
-                }}
-                modalPanZoom = svgPanZoom('#modalSvg', {{
-                    zoomEnabled: true,
-                    controlIconsEnabled: false,
-                    fit: true,
-                    center: true,
-                    minZoom: 0.1,
-                    maxZoom: 20,
-                    zoomScaleSensitivity: 0.3
-                }});
-            }}, 100);
         }}
 
-        function closeModal() {{
-            const modal = document.getElementById('diagramModal');
-            modal.classList.remove('active');
-            if (modalPanZoom) {{
-                modalPanZoom.destroy();
-                modalPanZoom = null;
+        function closeFullscreen() {{
+            if (!currentFullscreenEl) return;
+
+            // Hide overlay and controls
+            document.getElementById('fullscreenOverlay').classList.remove('active');
+            document.getElementById('fullscreenControls').classList.remove('active');
+
+            // Reset SVG transform before closing
+            const svg = currentFullscreenEl.querySelector('svg');
+            if (svg) {{
+                svg.style.transform = '';
+                svg.style.cursor = '';
             }}
+
+            // Remove fullscreen class
+            currentFullscreenEl.classList.remove('fullscreen');
+            currentFullscreenEl = null;
+            currentZoom = 1;
+            panX = 0;
+            panY = 0;
         }}
 
         function zoomIn() {{
-            if (modalPanZoom) modalPanZoom.zoomIn();
+            if (!currentFullscreenEl) return;
+            currentZoom *= 1.25;
+            applyZoom();
         }}
 
         function zoomOut() {{
-            if (modalPanZoom) modalPanZoom.zoomOut();
+            if (!currentFullscreenEl) return;
+            currentZoom *= 0.8;
+            applyZoom();
         }}
 
         function resetZoom() {{
-            if (modalPanZoom) {{
-                modalPanZoom.resetZoom();
-                modalPanZoom.center();
+            if (!currentFullscreenEl) return;
+            currentZoom = 1;
+            panX = 0;
+            panY = 0;
+            applyTransform();
+        }}
+
+        function fitToPage() {{
+            if (!currentFullscreenEl) return;
+            const svg = currentFullscreenEl.querySelector('svg');
+            if (!svg) return;
+
+            // Get the container dimensions (viewport minus controls bar)
+            const containerWidth = window.innerWidth - 40;
+            const containerHeight = window.innerHeight - 100;
+
+            // Get SVG natural dimensions
+            const svgRect = svg.getBoundingClientRect();
+            const svgWidth = svgRect.width / currentZoom;
+            const svgHeight = svgRect.height / currentZoom;
+
+            // Calculate zoom to fit
+            const scaleX = containerWidth / svgWidth;
+            const scaleY = containerHeight / svgHeight;
+            currentZoom = Math.min(scaleX, scaleY, 1) * 0.9; // 90% to add padding
+
+            // Center it
+            panX = 0;
+            panY = 0;
+            applyTransform();
+        }}
+
+        function applyZoom() {{
+            applyTransform();
+        }}
+
+        function applyTransform() {{
+            if (!currentFullscreenEl) return;
+            const svg = currentFullscreenEl.querySelector('svg');
+            if (svg) {{
+                svg.style.transform = `translate(${{panX}}px, ${{panY}}px) scale(${{currentZoom}})`;
             }}
         }}
 
-        function fitDiagram() {{
-            if (modalPanZoom) {{
-                modalPanZoom.fit();
-                modalPanZoom.center();
+        // Mouse wheel zoom in fullscreen
+        document.addEventListener('wheel', (e) => {{
+            if (!currentFullscreenEl) return;
+            e.preventDefault();
+            if (e.deltaY < 0) {{
+                currentZoom *= 1.1;
+            }} else {{
+                currentZoom *= 0.9;
             }}
-        }}
+            currentZoom = Math.max(0.1, Math.min(currentZoom, 20));
+            applyZoom();
+        }}, {{ passive: false }});
 
-        // Close modal with Escape key
+        // Mouse drag for panning
+        document.addEventListener('mousedown', (e) => {{
+            if (!currentFullscreenEl) return;
+            const svg = currentFullscreenEl.querySelector('svg');
+            if (svg && svg.contains(e.target)) {{
+                isDragging = true;
+                dragStartX = e.clientX;
+                dragStartY = e.clientY;
+                panStartX = panX;
+                panStartY = panY;
+                svg.style.cursor = 'grabbing';
+                e.preventDefault();
+            }}
+        }});
+
+        document.addEventListener('mousemove', (e) => {{
+            if (!isDragging || !currentFullscreenEl) return;
+            const dx = e.clientX - dragStartX;
+            const dy = e.clientY - dragStartY;
+            panX = panStartX + dx;
+            panY = panStartY + dy;
+            applyTransform();
+        }});
+
+        document.addEventListener('mouseup', () => {{
+            if (isDragging && currentFullscreenEl) {{
+                const svg = currentFullscreenEl.querySelector('svg');
+                if (svg) svg.style.cursor = 'grab';
+            }}
+            isDragging = false;
+        }});
+
+        // Close with Escape key
         document.addEventListener('keydown', (e) => {{
-            if (e.key === 'Escape') closeModal();
+            if (e.key === 'Escape') closeFullscreen();
         }});
 
         document.addEventListener('DOMContentLoaded', renderContent);
