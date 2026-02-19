@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Pipes;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -11,8 +13,11 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using AvaloniaEdit;
+using AvaloniaEdit.TextMate;
 using AvaloniaWebView;
 using Markdig;
+using TextMateSharp.Grammars;
 using WebViewCore.Events;
 
 namespace SimpleMarkdownViewer;
@@ -44,15 +49,41 @@ public partial class MainWindow : Window
     private readonly List<TabState> _tabs = new();
     private int _selectedTabIndex = -1;
 
+    // Editor controls
+    private readonly TextEditor _textEditor;
+    private readonly GridSplitter _editorSplitter;
+    private readonly ColumnDefinition _editorColumn;
+    private readonly ColumnDefinition _splitterColumn;
+    private readonly MenuItem _editModeMenuItem;
+    private readonly MenuItem _saveMenuItem;
+    private readonly MenuItem _saveAsMenuItem;
+
+    // Edit mode state
+    private bool _isEditMode;
+    private TextMate.Installation? _textMateInstallation;
+    private Timer? _previewDebounceTimer;
+    private const int PreviewDebounceMs = 300;
+    private int _untitledCounter;
+
+    // Single-instance pipe server
+    private CancellationTokenSource? _pipeCts;
+
     private class TabState
     {
         public string FilePath { get; set; } = "";
-        public string FileName => Path.GetFileName(FilePath);
+        public string FileName => IsNewFile ? (DisplayName ?? "Untitled") : Path.GetFileName(FilePath);
         public string TempHtmlPath { get; set; } = "";
         public string? CachedHtml { get; set; }
         public FileSystemWatcher? Watcher { get; set; }
         public Button? TabButton { get; set; }
         public TextBlock? TabText { get; set; }
+
+        // Edit mode fields
+        public bool IsModified { get; set; }
+        public string OriginalContent { get; set; } = "";
+        public string EditContent { get; set; } = "";
+        public bool IsNewFile { get; set; }
+        public string? DisplayName { get; set; }
     }
 
     private class AppSettings
@@ -183,6 +214,16 @@ public partial class MainWindow : Window
         _mainPanel = this.FindControl<DockPanel>("MainPanel")!;
         _recentMenu = this.FindControl<MenuItem>("RecentMenu")!;
 
+        // Editor controls
+        _textEditor = this.FindControl<TextEditor>("TextEditor")!;
+        _editorSplitter = this.FindControl<GridSplitter>("EditorSplitter")!;
+        var contentGrid = this.FindControl<Grid>("ContentGrid")!;
+        _editorColumn = contentGrid.ColumnDefinitions[0];
+        _splitterColumn = contentGrid.ColumnDefinitions[1];
+        _editModeMenuItem = this.FindControl<MenuItem>("EditModeMenuItem")!;
+        _saveMenuItem = this.FindControl<MenuItem>("SaveMenuItem")!;
+        _saveAsMenuItem = this.FindControl<MenuItem>("SaveAsMenuItem")!;
+
         // Load settings
         LoadSettings();
         UpdateRecentMenu();
@@ -194,6 +235,15 @@ public partial class MainWindow : Window
             .UseTaskLists()
             .UseDiagrams()
             .Build();
+
+        // Set up AvaloniaEdit TextMate for markdown highlighting
+        SetupTextMateTheme();
+
+        // Set up editor context menu
+        SetupEditorContextMenu();
+
+        // Wire up editor text change events
+        _textEditor.TextChanged += OnEditorTextChanged;
 
         // Wire up WebView events
         _webView.WebViewCreated += OnWebViewCreated;
@@ -214,6 +264,240 @@ public partial class MainWindow : Window
         {
             _ = OpenFileInNewTab(args[1]);
         }
+
+        // Start named pipe server for single-instance file opening
+        StartPipeServer();
+    }
+
+    private void StartPipeServer()
+    {
+        _pipeCts = new CancellationTokenSource();
+        var ct = _pipeCts.Token;
+
+        Task.Run(async () =>
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    using var server = new NamedPipeServerStream(
+                        "SimpleMarkdownViewer_Pipe",
+                        PipeDirection.In,
+                        NamedPipeServerStream.MaxAllowedServerInstances);
+                    await server.WaitForConnectionAsync(ct);
+                    using var reader = new StreamReader(server);
+                    var filePath = await reader.ReadLineAsync();
+
+                    if (!string.IsNullOrWhiteSpace(filePath) && File.Exists(filePath))
+                    {
+                        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+                        {
+                            await OpenFileInNewTab(filePath);
+
+                            // Bring window to front
+                            if (WindowState == WindowState.Minimized)
+                                WindowState = WindowState.Normal;
+                            Activate();
+                            Topmost = true;
+                            Topmost = false;
+                        });
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch
+                {
+                    // Brief delay before retrying on error
+                    try { await Task.Delay(100, ct); } catch { break; }
+                }
+            }
+        }, ct);
+    }
+
+    private void SetupTextMateTheme()
+    {
+        _textMateInstallation?.Dispose();
+        var registryOptions = new RegistryOptions(
+            _isDarkMode ? ThemeName.DarkPlus : ThemeName.LightPlus);
+        _textMateInstallation = _textEditor.InstallTextMate(registryOptions);
+        var mdLang = registryOptions.GetLanguageByExtension(".md");
+        if (mdLang != null)
+        {
+            _textMateInstallation.SetGrammar(registryOptions.GetScopeByLanguageId(mdLang.Id));
+        }
+        _textEditor.Background = new SolidColorBrush(Color.Parse(_isDarkMode ? "#1e1e1e" : "#ffffff"));
+        _textEditor.Foreground = new SolidColorBrush(Color.Parse(_isDarkMode ? "#d4d4d4" : "#1e1e1e"));
+    }
+
+    private void SetupEditorContextMenu()
+    {
+        var cutItem = new MenuItem { Header = "Cut", InputGesture = new KeyGesture(Key.X, KeyModifiers.Control) };
+        cutItem.Click += (s, e) => _textEditor.Cut();
+
+        var copyItem = new MenuItem { Header = "Copy", InputGesture = new KeyGesture(Key.C, KeyModifiers.Control) };
+        copyItem.Click += (s, e) => _textEditor.Copy();
+
+        var pasteItem = new MenuItem { Header = "Paste", InputGesture = new KeyGesture(Key.V, KeyModifiers.Control) };
+        pasteItem.Click += (s, e) => _textEditor.Paste();
+
+        var selectAllItem = new MenuItem { Header = "Select All", InputGesture = new KeyGesture(Key.A, KeyModifiers.Control) };
+        selectAllItem.Click += (s, e) => _textEditor.SelectAll();
+
+        // Format submenu
+        var boldItem = new MenuItem { Header = "Bold", InputGesture = new KeyGesture(Key.B, KeyModifiers.Control) };
+        boldItem.Click += (s, e) => WrapSelection("**", "**", "bold text");
+
+        var italicItem = new MenuItem { Header = "Italic", InputGesture = new KeyGesture(Key.I, KeyModifiers.Control) };
+        italicItem.Click += (s, e) => WrapSelection("*", "*", "italic text");
+
+        var strikeItem = new MenuItem { Header = "Strikethrough" };
+        strikeItem.Click += (s, e) => WrapSelection("~~", "~~", "strikethrough");
+
+        var codeItem = new MenuItem { Header = "Inline Code" };
+        codeItem.Click += (s, e) => WrapSelection("`", "`", "code");
+
+        var codeBlockItem = new MenuItem { Header = "Code Block" };
+        codeBlockItem.Click += (s, e) => WrapSelection("```\n", "\n```", "code");
+
+        var linkItem = new MenuItem { Header = "Link" };
+        linkItem.Click += (s, e) => InsertLink();
+
+        var imageItem = new MenuItem { Header = "Image" };
+        imageItem.Click += (s, e) => InsertMarkdown("![alt text](url)");
+
+        var h1Item = new MenuItem { Header = "Heading 1" };
+        h1Item.Click += (s, e) => PrefixLine("# ");
+
+        var h2Item = new MenuItem { Header = "Heading 2" };
+        h2Item.Click += (s, e) => PrefixLine("## ");
+
+        var h3Item = new MenuItem { Header = "Heading 3" };
+        h3Item.Click += (s, e) => PrefixLine("### ");
+
+        var bulletItem = new MenuItem { Header = "Bullet List" };
+        bulletItem.Click += (s, e) => PrefixLine("- ");
+
+        var numberItem = new MenuItem { Header = "Numbered List" };
+        numberItem.Click += (s, e) => PrefixLine("1. ");
+
+        var quoteItem = new MenuItem { Header = "Blockquote" };
+        quoteItem.Click += (s, e) => PrefixLine("> ");
+
+        var taskItem = new MenuItem { Header = "Task List" };
+        taskItem.Click += (s, e) => PrefixLine("- [ ] ");
+
+        var hrItem = new MenuItem { Header = "Horizontal Rule" };
+        hrItem.Click += (s, e) => InsertMarkdown("\n---\n");
+
+        var formatMenu = new MenuItem
+        {
+            Header = "Format",
+            Items =
+            {
+                boldItem, italicItem, strikeItem,
+                new Separator(),
+                codeItem, codeBlockItem,
+                new Separator(),
+                linkItem, imageItem,
+                new Separator(),
+                h1Item, h2Item, h3Item,
+                new Separator(),
+                bulletItem, numberItem, quoteItem, taskItem,
+                new Separator(),
+                hrItem
+            }
+        };
+
+        _textEditor.ContextMenu = new ContextMenu
+        {
+            Items = { cutItem, copyItem, pasteItem, new Separator(), selectAllItem, new Separator(), formatMenu }
+        };
+    }
+
+    private void WrapSelection(string before, string after, string placeholder)
+    {
+        var doc = _textEditor.Document;
+        var offset = _textEditor.SelectionStart;
+        var length = _textEditor.SelectionLength;
+
+        if (length > 0)
+        {
+            var selected = doc.GetText(offset, length);
+            var replacement = before + selected + after;
+            doc.Replace(offset, length, replacement);
+            // Select the wrapped text (without the markers)
+            _textEditor.Select(offset + before.Length, selected.Length);
+        }
+        else
+        {
+            var text = before + placeholder + after;
+            doc.Insert(offset, text);
+            // Select the placeholder so user can type over it
+            _textEditor.Select(offset + before.Length, placeholder.Length);
+        }
+        _textEditor.Focus();
+    }
+
+    private void InsertLink()
+    {
+        var doc = _textEditor.Document;
+        var offset = _textEditor.SelectionStart;
+        var length = _textEditor.SelectionLength;
+
+        if (length > 0)
+        {
+            var selected = doc.GetText(offset, length);
+            var replacement = $"[{selected}](url)";
+            doc.Replace(offset, length, replacement);
+            // Select "url" so user can type the URL
+            _textEditor.Select(offset + selected.Length + 3, 3);
+        }
+        else
+        {
+            var text = "[link text](url)";
+            doc.Insert(offset, text);
+            _textEditor.Select(offset + 1, 9); // Select "link text"
+        }
+        _textEditor.Focus();
+    }
+
+    private void InsertMarkdown(string markdown)
+    {
+        var doc = _textEditor.Document;
+        var offset = _textEditor.SelectionStart;
+        doc.Insert(offset, markdown);
+        _textEditor.CaretOffset = offset + markdown.Length;
+        _textEditor.Focus();
+    }
+
+    private void PrefixLine(string prefix)
+    {
+        var doc = _textEditor.Document;
+        var offset = _textEditor.SelectionStart;
+        var length = _textEditor.SelectionLength;
+
+        if (length > 0)
+        {
+            // Prefix each selected line
+            var startLine = doc.GetLineByOffset(offset);
+            var endLine = doc.GetLineByOffset(offset + length);
+            // Work backwards to preserve offsets
+            for (int lineNum = endLine.LineNumber; lineNum >= startLine.LineNumber; lineNum--)
+            {
+                var line = doc.GetLineByNumber(lineNum);
+                doc.Insert(line.Offset, prefix);
+            }
+        }
+        else
+        {
+            // Prefix the current line
+            var line = doc.GetLineByOffset(offset);
+            doc.Insert(line.Offset, prefix);
+            _textEditor.CaretOffset = offset + prefix.Length;
+        }
+        _textEditor.Focus();
     }
 
     private async void OnWindowLoaded(object? sender, RoutedEventArgs e)
@@ -235,8 +519,36 @@ public partial class MainWindow : Window
         
         switch (e.Key)
         {
+            case Key.N when ctrl && !shift:
+                OnNewFileClick(null, null!);
+                e.Handled = true;
+                break;
             case Key.O when ctrl:
                 OnOpenClick(null, null!);
+                e.Handled = true;
+                break;
+            case Key.S when ctrl && !shift:
+                OnSaveClick(null, null!);
+                e.Handled = true;
+                break;
+            case Key.S when ctrl && shift:
+                OnSaveAsClick(null, null!);
+                e.Handled = true;
+                break;
+            case Key.E when ctrl:
+                OnToggleEditModeClick(null, null!);
+                e.Handled = true;
+                break;
+            case Key.B when ctrl && _isEditMode:
+                WrapSelection("**", "**", "bold text");
+                e.Handled = true;
+                break;
+            case Key.I when ctrl && _isEditMode:
+                WrapSelection("*", "*", "italic text");
+                e.Handled = true;
+                break;
+            case Key.K when ctrl && _isEditMode:
+                InsertLink();
                 e.Handled = true;
                 break;
             case Key.W when ctrl:
@@ -361,6 +673,18 @@ public partial class MainWindow : Window
     private void OnNavigationStarting(object? sender, WebViewCore.Events.WebViewUrlLoadingEventArg e)
     {
         var url = e.Url?.ToString() ?? "";
+
+        // Handle app:// commands from JavaScript context menu
+        if (url.StartsWith("app://", StringComparison.OrdinalIgnoreCase))
+        {
+            e.Cancel = true;
+            if (url.Contains("toggle-edit"))
+            {
+                Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    OnToggleEditModeClick(null, null!));
+            }
+            return;
+        }
 
         // Check if this is a file being dragged onto WebView
         if (url.StartsWith("file:///", StringComparison.OrdinalIgnoreCase))
@@ -621,6 +945,68 @@ public partial class MainWindow : Window
             border: 1px solid {borderColor};
             border-radius: 6px;
         }}
+
+        /* Custom context menu */
+        .ctx-menu {{
+            display: none;
+            position: fixed;
+            z-index: 20000;
+            background: {(_isDarkMode ? "#2d2d2d" : "#ffffff")};
+            border: 1px solid {borderColor};
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            padding: 4px 0;
+            min-width: 160px;
+            font-size: 13px;
+        }}
+        .ctx-menu.active {{ display: block; }}
+        .ctx-menu-item {{
+            padding: 6px 16px;
+            cursor: pointer;
+            color: {textColor};
+            display: flex;
+            justify-content: space-between;
+        }}
+        .ctx-menu-item:hover {{
+            background: {(_isDarkMode ? "#3a3a3a" : "#f0f0f0")};
+        }}
+        .ctx-menu-item .shortcut {{
+            color: {blockquoteColor};
+            margin-left: 24px;
+            font-size: 12px;
+        }}
+        .ctx-menu-sep {{
+            height: 1px;
+            background: {borderColor};
+            margin: 4px 0;
+        }}
+
+        @media print {{
+            body {{
+                color: #000000 !important;
+                background-color: #ffffff !important;
+            }}
+            h1, h2, h3, h4, h5, h6 {{
+                color: #000000 !important;
+                border-color: #d0d7de !important;
+            }}
+            a {{ color: #0969da !important; }}
+            code, pre {{
+                background-color: #f6f8fa !important;
+                color: #000000 !important;
+            }}
+            th, td {{
+                border-color: #d0d7de !important;
+                color: #000000 !important;
+            }}
+            th {{ background-color: #f6f8fa !important; }}
+            blockquote {{ color: #656d76 !important; border-color: #d0d7de !important; }}
+            kbd {{ color: #000000 !important; background-color: #f6f8fa !important; border-color: #d0d7de !important; }}
+            hr {{ background-color: #d0d7de !important; }}
+            .mermaid {{ border-color: #d0d7de !important; }}
+            .mermaid::after {{ display: none; }}
+            .fullscreen-overlay, .fullscreen-controls {{ display: none !important; }}
+        }}
     </style>
 </head>
 <body>
@@ -639,6 +1025,14 @@ public partial class MainWindow : Window
             <button onclick=""fitToPage()"">Fit</button>
             <button onclick=""closeFullscreen()"">✕ Close (Esc)</button>
         </div>
+    </div>
+
+    <!-- Custom context menu -->
+    <div id=""ctxMenu"" class=""ctx-menu"">
+        <div class=""ctx-menu-item"" id=""ctxEdit"">Edit<span class=""shortcut"">Ctrl+E</span></div>
+        <div class=""ctx-menu-sep""></div>
+        <div class=""ctx-menu-item"" id=""ctxCopy"">Copy<span class=""shortcut"">Ctrl+C</span></div>
+        <div class=""ctx-menu-item"" id=""ctxSelectAll"">Select All<span class=""shortcut"">Ctrl+A</span></div>
     </div>
     
     <script>
@@ -846,6 +1240,54 @@ public partial class MainWindow : Window
             if (e.key === 'Escape') closeFullscreen();
         }});
 
+        // Custom right-click context menu
+        (function() {{
+            const menu = document.getElementById('ctxMenu');
+            const ctxEdit = document.getElementById('ctxEdit');
+            const ctxCopy = document.getElementById('ctxCopy');
+            const ctxSelectAll = document.getElementById('ctxSelectAll');
+
+            function hideMenu() {{ menu.classList.remove('active'); }}
+
+            document.addEventListener('contextmenu', (e) => {{
+                e.preventDefault();
+                const sel = window.getSelection();
+                const hasSelection = sel && sel.toString().length > 0;
+                ctxCopy.style.opacity = hasSelection ? '1' : '0.4';
+                ctxCopy.style.pointerEvents = hasSelection ? 'auto' : 'none';
+
+                menu.style.left = Math.min(e.clientX, window.innerWidth - 180) + 'px';
+                menu.style.top = Math.min(e.clientY, window.innerHeight - 80) + 'px';
+                menu.classList.add('active');
+            }});
+
+            document.addEventListener('click', hideMenu);
+            document.addEventListener('scroll', hideMenu);
+            window.addEventListener('blur', hideMenu);
+
+            ctxEdit.addEventListener('click', () => {{
+                hideMenu();
+                window.location.href = 'app://toggle-edit';
+            }});
+
+            ctxCopy.addEventListener('click', () => {{
+                const sel = window.getSelection();
+                if (sel && sel.toString().length > 0) {{
+                    navigator.clipboard.writeText(sel.toString());
+                }}
+                hideMenu();
+            }});
+
+            ctxSelectAll.addEventListener('click', () => {{
+                const range = document.createRange();
+                range.selectNodeContents(document.getElementById('content'));
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+                hideMenu();
+            }});
+        }})();
+
         document.addEventListener('DOMContentLoaded', renderContent);
     </script>
 </body>
@@ -999,27 +1441,39 @@ public partial class MainWindow : Window
     private void SelectTab(int index)
     {
         if (index < 0 || index >= _tabs.Count) return;
-        
+
+        // Save current editor content back to the outgoing tab before switching
+        if (_isEditMode && _selectedTabIndex >= 0 && _selectedTabIndex < _tabs.Count)
+        {
+            _tabs[_selectedTabIndex].EditContent = _textEditor.Text ?? "";
+        }
+
         _selectedTabIndex = index;
         var tab = _tabs[index];
-        
+
         // Update tab button appearances
         for (int i = 0; i < _tabs.Count; i++)
         {
             var btn = _tabs[i].TabButton;
             if (btn != null)
             {
-                btn.Background = i == index 
+                btn.Background = i == index
                     ? new SolidColorBrush(Color.Parse(_isDarkMode ? "#3a3a3a" : "#ffffff"))
                     : new SolidColorBrush(Color.Parse(_isDarkMode ? "#2a2a2a" : "#d0d0d0"));
             }
         }
-        
+
         // Update status and title
-        _statusText.Text = tab.FilePath;
-        Title = $"Simple Markdown Viewer - {tab.FileName}";
-        
-        // Load content
+        _statusText.Text = tab.IsNewFile ? (tab.DisplayName ?? "Untitled") : tab.FilePath;
+        Title = $"Simple Markdown Viewer - {(tab.IsModified ? "* " : "")}{tab.FileName}";
+
+        // Load editor content if in edit mode
+        if (_isEditMode)
+        {
+            LoadCurrentTabIntoEditor();
+        }
+
+        // Load preview content
         if (tab.CachedHtml != null)
         {
             if (_webViewReady)
@@ -1031,23 +1485,63 @@ public partial class MainWindow : Window
                 _pendingHtml = tab.CachedHtml;
             }
         }
+        else if (tab.IsNewFile)
+        {
+            var template = GetTemplate();
+            tab.CachedHtml = template.Replace("{{CONTENT}}", "<p><em>Start typing in the editor...</em></p>");
+            RenderHtml(tab.CachedHtml);
+        }
     }
 
-    private void CloseTab(TabState tab)
+    private async void CloseTab(TabState tab)
     {
         var index = _tabs.IndexOf(tab);
         if (index < 0) return;
-        
+
+        // Check for unsaved changes
+        if (tab.IsModified)
+        {
+            var result = await ShowUnsavedChangesDialog(tab.FileName);
+            if (result == "Save")
+            {
+                if (tab.IsNewFile || string.IsNullOrEmpty(tab.FilePath))
+                {
+                    // Need Save As for new files
+                    var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+                    {
+                        Title = "Save Markdown File",
+                        DefaultExtension = ".md",
+                        FileTypeChoices = new[]
+                        {
+                            new FilePickerFileType("Markdown Files") { Patterns = new[] { "*.md", "*.markdown" } },
+                            new FilePickerFileType("All Files") { Patterns = new[] { "*.*" } }
+                        },
+                        SuggestedFileName = "untitled.md"
+                    });
+                    if (file == null) return; // User cancelled
+                    await SaveTabToFile(tab, file.Path.LocalPath);
+                }
+                else
+                {
+                    await SaveTabToFile(tab, tab.FilePath);
+                }
+            }
+            else if (result == "Cancel")
+            {
+                return;
+            }
+        }
+
         // Clean up
         tab.Watcher?.Dispose();
         try { if (File.Exists(tab.TempHtmlPath)) File.Delete(tab.TempHtmlPath); } catch { }
-        
+
         // Remove from UI
         if (tab.TabButton != null)
             _tabPanel.Children.Remove(tab.TabButton);
-        
+
         _tabs.RemoveAt(index);
-        
+
         // Select another tab
         if (_tabs.Count == 0)
         {
@@ -1055,6 +1549,12 @@ public partial class MainWindow : Window
             _statusText.Text = "Ready - Open a markdown file (Ctrl+O)";
             Title = "Simple Markdown Viewer";
             RenderHtml(GetWelcomePage());
+
+            // Hide editor if no tabs
+            if (_isEditMode)
+            {
+                OnToggleEditModeClick(null, null!);
+            }
         }
         else
         {
@@ -1070,14 +1570,317 @@ public partial class MainWindow : Window
         }
     }
 
+    // ===================== Edit Mode =====================
+
+    private void OnToggleEditModeClick(object? sender, RoutedEventArgs e)
+    {
+        _isEditMode = !_isEditMode;
+
+        if (_isEditMode)
+        {
+            _editorColumn.Width = new GridLength(1, GridUnitType.Star);
+            _splitterColumn.Width = new GridLength(4);
+            _textEditor.IsVisible = true;
+            _editorSplitter.IsVisible = true;
+            _editModeMenuItem.Header = "Exit _Edit Mode";
+            _saveMenuItem.IsEnabled = true;
+            _saveAsMenuItem.IsEnabled = true;
+
+            LoadCurrentTabIntoEditor();
+        }
+        else
+        {
+            // Save current editor content back to tab before hiding
+            if (_selectedTabIndex >= 0 && _selectedTabIndex < _tabs.Count)
+            {
+                _tabs[_selectedTabIndex].EditContent = _textEditor.Text ?? "";
+            }
+
+            _editorColumn.Width = new GridLength(0);
+            _splitterColumn.Width = new GridLength(0);
+            _textEditor.IsVisible = false;
+            _editorSplitter.IsVisible = false;
+            _editModeMenuItem.Header = "_Edit Mode";
+            UpdateSaveMenuState();
+        }
+
+        // Update WebView context menu label
+        try
+        {
+            var label = _isEditMode ? "Exit Edit Mode" : "Edit";
+            _webView.ExecuteScriptAsync($"document.getElementById('ctxEdit').childNodes[0].textContent = '{label}';");
+        }
+        catch { }
+    }
+
+    private void LoadCurrentTabIntoEditor()
+    {
+        if (_selectedTabIndex < 0 || _selectedTabIndex >= _tabs.Count) return;
+        var tab = _tabs[_selectedTabIndex];
+
+        if (string.IsNullOrEmpty(tab.EditContent) && !tab.IsNewFile)
+        {
+            // First time entering edit mode for this tab -- load from file
+            if (File.Exists(tab.FilePath))
+            {
+                var content = File.ReadAllText(tab.FilePath);
+                tab.OriginalContent = content;
+                tab.EditContent = content;
+            }
+        }
+
+        // Suppress TextChanged while loading
+        _textEditor.TextChanged -= OnEditorTextChanged;
+        _textEditor.Text = tab.EditContent;
+        _textEditor.TextChanged += OnEditorTextChanged;
+    }
+
+    private void UpdateSaveMenuState()
+    {
+        var anyModified = _tabs.Any(t => t.IsModified);
+        _saveMenuItem.IsEnabled = _isEditMode || anyModified;
+        _saveAsMenuItem.IsEnabled = _isEditMode || _tabs.Count > 0;
+    }
+
+    private void OnEditorTextChanged(object? sender, EventArgs e)
+    {
+        if (_selectedTabIndex < 0 || _selectedTabIndex >= _tabs.Count) return;
+        var tab = _tabs[_selectedTabIndex];
+
+        tab.EditContent = _textEditor.Text ?? "";
+
+        var wasModified = tab.IsModified;
+        tab.IsModified = tab.EditContent != tab.OriginalContent;
+
+        if (wasModified != tab.IsModified)
+        {
+            UpdateTabTitle(tab);
+        }
+
+        // Debounce preview update
+        _previewDebounceTimer?.Dispose();
+        _previewDebounceTimer = new Timer(
+            _ => Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => UpdatePreviewFromEditor(tab)),
+            null,
+            PreviewDebounceMs,
+            Timeout.Infinite);
+    }
+
+    private void UpdatePreviewFromEditor(TabState tab)
+    {
+        if (_selectedTabIndex < 0 || _tabs[_selectedTabIndex] != tab) return;
+
+        try
+        {
+            var htmlContent = ConvertMarkdownToHtml(tab.EditContent);
+            var template = GetTemplate();
+            tab.CachedHtml = template.Replace("{{CONTENT}}", htmlContent);
+            RenderHtml(tab.CachedHtml);
+        }
+        catch (Exception ex)
+        {
+            _statusText.Text = $"Preview error: {ex.Message}";
+        }
+    }
+
+    private void UpdateTabTitle(TabState tab)
+    {
+        if (tab.TabText == null) return;
+        var name = tab.FileName;
+        if (tab.IsModified)
+            name = "* " + name;
+        tab.TabText.Text = name;
+
+        // Also update window title if this is the selected tab
+        var idx = _tabs.IndexOf(tab);
+        if (idx == _selectedTabIndex)
+        {
+            Title = $"Simple Markdown Viewer - {(tab.IsModified ? "* " : "")}{tab.FileName}";
+        }
+    }
+
+    // ===================== Save / Save As / New =====================
+
+    private async void OnSaveClick(object? sender, RoutedEventArgs e)
+    {
+        if (_selectedTabIndex < 0 || _selectedTabIndex >= _tabs.Count) return;
+        var tab = _tabs[_selectedTabIndex];
+
+        if (tab.IsNewFile || string.IsNullOrEmpty(tab.FilePath))
+        {
+            OnSaveAsClick(sender, e);
+            return;
+        }
+
+        await SaveTabToFile(tab, tab.FilePath);
+    }
+
+    private async void OnSaveAsClick(object? sender, RoutedEventArgs e)
+    {
+        if (_selectedTabIndex < 0 || _selectedTabIndex >= _tabs.Count) return;
+        var tab = _tabs[_selectedTabIndex];
+
+        try
+        {
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Save Markdown File",
+                DefaultExtension = ".md",
+                FileTypeChoices = new[]
+                {
+                    new FilePickerFileType("Markdown Files") { Patterns = new[] { "*.md", "*.markdown" } },
+                    new FilePickerFileType("All Files") { Patterns = new[] { "*.*" } }
+                },
+                SuggestedFileName = tab.IsNewFile ? "untitled.md" : tab.FileName
+            });
+
+            if (file != null)
+            {
+                var newPath = file.Path.LocalPath;
+                await SaveTabToFile(tab, newPath);
+
+                tab.FilePath = newPath;
+                tab.IsNewFile = false;
+                tab.DisplayName = null;
+
+                SetupFileWatcher(tab);
+                UpdateTabTitle(tab);
+                Title = $"Simple Markdown Viewer - {tab.FileName}";
+                _statusText.Text = tab.FilePath;
+
+                AddToRecentFiles(newPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            _statusText.Text = $"Save failed: {ex.Message}";
+        }
+    }
+
+    private async Task SaveTabToFile(TabState tab, string filePath)
+    {
+        try
+        {
+            // Temporarily disable file watcher to avoid re-render loop
+            if (tab.Watcher != null)
+                tab.Watcher.EnableRaisingEvents = false;
+
+            await File.WriteAllTextAsync(filePath, tab.EditContent);
+
+            tab.OriginalContent = tab.EditContent;
+            tab.IsModified = false;
+            UpdateTabTitle(tab);
+
+            _statusText.Text = $"Saved: {filePath}";
+
+            // Re-enable file watcher after filesystem settles
+            if (tab.Watcher != null)
+            {
+                await Task.Delay(200);
+                tab.Watcher.EnableRaisingEvents = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            _statusText.Text = $"Save failed: {ex.Message}";
+        }
+    }
+
+    private void OnNewFileClick(object? sender, RoutedEventArgs e)
+    {
+        _untitledCounter++;
+        var displayName = _untitledCounter == 1 ? "Untitled" : $"Untitled {_untitledCounter}";
+
+        var tab = new TabState
+        {
+            FilePath = "",
+            TempHtmlPath = Path.Combine(Path.GetTempPath(), $"mdviewer_{Guid.NewGuid():N}.html"),
+            IsNewFile = true,
+            DisplayName = displayName,
+            EditContent = "",
+            OriginalContent = ""
+        };
+
+        var button = CreateTabButton(tab);
+        tab.TabButton = button;
+        _tabPanel.Children.Add(button);
+        _tabs.Add(tab);
+
+        // Auto-enable edit mode if not already
+        if (!_isEditMode)
+        {
+            OnToggleEditModeClick(null, null!);
+        }
+
+        SelectTab(_tabs.Count - 1);
+
+        // Show empty preview
+        var template = GetTemplate();
+        tab.CachedHtml = template.Replace("{{CONTENT}}", "<p><em>Start typing in the editor...</em></p>");
+        RenderHtml(tab.CachedHtml);
+
+        _textEditor.Focus();
+    }
+
+    // ===================== Unsaved Changes Dialog =====================
+
+    private async Task<string> ShowUnsavedChangesDialog(string fileName)
+    {
+        var result = "Cancel";
+
+        var dialog = new Window
+        {
+            Title = "Unsaved Changes",
+            Width = 420,
+            Height = 160,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            CanResize = false,
+        };
+
+        var panel = new StackPanel { Margin = new Thickness(20), Spacing = 16 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"Save changes to {fileName}?",
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap
+        });
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+
+        var saveBtn = new Button { Content = "Save", Width = 80 };
+        saveBtn.Click += (s, ev) => { result = "Save"; dialog.Close(); };
+
+        var dontSaveBtn = new Button { Content = "Don't Save", Width = 100 };
+        dontSaveBtn.Click += (s, ev) => { result = "DontSave"; dialog.Close(); };
+
+        var cancelBtn = new Button { Content = "Cancel", Width = 80 };
+        cancelBtn.Click += (s, ev) => { result = "Cancel"; dialog.Close(); };
+
+        buttons.Children.Add(saveBtn);
+        buttons.Children.Add(dontSaveBtn);
+        buttons.Children.Add(cancelBtn);
+        panel.Children.Add(buttons);
+
+        dialog.Content = panel;
+        await dialog.ShowDialog(this);
+
+        return result;
+    }
+
+    // ===================== End Edit Mode =====================
+
     private async void OnCopyMarkdownClick(object? sender, RoutedEventArgs e)
     {
         if (_selectedTabIndex < 0 || _selectedTabIndex >= _tabs.Count) return;
-        
+
         var tab = _tabs[_selectedTabIndex];
         try
         {
-            var markdown = await File.ReadAllTextAsync(tab.FilePath);
+            var markdown = _isEditMode ? tab.EditContent : await File.ReadAllTextAsync(tab.FilePath);
             var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
             if (clipboard != null)
             {
@@ -1117,9 +1920,17 @@ public partial class MainWindow : Window
         if (_selectedTabIndex >= 0 && _selectedTabIndex < _tabs.Count)
         {
             var tab = _tabs[_selectedTabIndex];
-            await GenerateHtml(tab);
-            if (tab.CachedHtml != null)
-                RenderHtml(tab.CachedHtml);
+            if (_isEditMode)
+            {
+                // In edit mode, re-render from editor content
+                UpdatePreviewFromEditor(tab);
+            }
+            else if (!tab.IsNewFile)
+            {
+                await GenerateHtml(tab);
+                if (tab.CachedHtml != null)
+                    RenderHtml(tab.CachedHtml);
+            }
         }
     }
 
@@ -1161,7 +1972,7 @@ public partial class MainWindow : Window
             Spacing = 8
         };
         info.Children.Add(new TextBlock { Text = "Simple Markdown Viewer", FontSize = 20, FontWeight = Avalonia.Media.FontWeight.Bold, HorizontalAlignment = HorizontalAlignment.Center });
-        info.Children.Add(new TextBlock { Text = "Version 1.0.3", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
+        info.Children.Add(new TextBlock { Text = "Version 1.2.0", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "A lightweight markdown viewer with\nlive reload, tabs, and dark mode.", TextAlignment = Avalonia.Media.TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "Built with Avalonia UI, WebView2, and Markdig", FontSize = 11, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
         
@@ -1183,20 +1994,33 @@ public partial class MainWindow : Window
         _isDarkMode = !_isDarkMode;
         ApplyTheme();
         SaveSettings();
-        
+
+        // Update editor theme
+        SetupTextMateTheme();
+
         // Regenerate all tabs with new theme
         foreach (var tab in _tabs)
         {
-            await GenerateHtml(tab);
+            if (tab.IsNewFile && _isEditMode)
+            {
+                // New files generate HTML from editor content, not from disk
+                var htmlContent = ConvertMarkdownToHtml(tab.EditContent);
+                var template = GetTemplate();
+                tab.CachedHtml = template.Replace("{{CONTENT}}", htmlContent);
+            }
+            else if (!tab.IsNewFile)
+            {
+                await GenerateHtml(tab);
+            }
         }
-        
+
         // Update tab button colors and text
         for (int i = 0; i < _tabs.Count; i++)
         {
             var btn = _tabs[i].TabButton;
             if (btn != null)
             {
-                btn.Background = i == _selectedTabIndex 
+                btn.Background = i == _selectedTabIndex
                     ? new SolidColorBrush(Color.Parse(_isDarkMode ? "#3a3a3a" : "#ffffff"))
                     : new SolidColorBrush(Color.Parse(_isDarkMode ? "#2a2a2a" : "#d0d0d0"));
             }
@@ -1206,7 +2030,7 @@ public partial class MainWindow : Window
                 txt.Foreground = new SolidColorBrush(Color.Parse(_isDarkMode ? "#ffffff" : "#000000"));
             }
         }
-        
+
         // Re-render current tab or welcome page
         if (_selectedTabIndex >= 0 && _selectedTabIndex < _tabs.Count)
         {
@@ -1239,11 +2063,34 @@ public partial class MainWindow : Window
             await Task.Delay(100);
             await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
             {
+                if (tab.IsModified && _isEditMode)
+                {
+                    // File changed externally while user has unsaved edits -- don't overwrite
+                    _statusText.Text = $"Warning: {tab.FileName} changed on disk. Save to overwrite or Refresh (F5) to reload.";
+                    return;
+                }
+
                 await GenerateHtml(tab);
-                
+
+                // Also update the editor content if in edit mode
+                if (_isEditMode && File.Exists(tab.FilePath))
+                {
+                    var content = await File.ReadAllTextAsync(tab.FilePath);
+                    tab.OriginalContent = content;
+                    tab.EditContent = content;
+
+                    var idx = _tabs.IndexOf(tab);
+                    if (idx == _selectedTabIndex)
+                    {
+                        _textEditor.TextChanged -= OnEditorTextChanged;
+                        _textEditor.Text = content;
+                        _textEditor.TextChanged += OnEditorTextChanged;
+                    }
+                }
+
                 // If this is the selected tab, re-render
-                var idx = _tabs.IndexOf(tab);
-                if (idx == _selectedTabIndex && tab.CachedHtml != null)
+                var tabIdx = _tabs.IndexOf(tab);
+                if (tabIdx == _selectedTabIndex && tab.CachedHtml != null)
                 {
                     RenderHtml(tab.CachedHtml);
                 }
@@ -1253,45 +2100,50 @@ public partial class MainWindow : Window
         tab.Watcher.EnableRaisingEvents = true;
     }
 
+    private string ConvertMarkdownToHtml(string markdown)
+    {
+        // Extract Mermaid blocks BEFORE Markdig processing to protect from typography transforms
+        var mermaidBlocks = new List<string>();
+        markdown = System.Text.RegularExpressions.Regex.Replace(
+            markdown,
+            @"```mermaid\s*\n([\s\S]*?)```",
+            m => {
+                mermaidBlocks.Add(m.Groups[1].Value);
+                return $"<!--MERMAID_PLACEHOLDER_{mermaidBlocks.Count - 1}-->";
+            },
+            System.Text.RegularExpressions.RegexOptions.Multiline
+        );
+
+        // Ensure tables have a blank line before them (for Markdig compatibility)
+        markdown = System.Text.RegularExpressions.Regex.Replace(
+            markdown,
+            @"(\n[^\n\|]+)\n(\|[^\n]+\|)",
+            "$1\n\n$2",
+            System.Text.RegularExpressions.RegexOptions.Multiline
+        );
+
+        markdown = PreprocessMath(markdown);
+
+        var htmlContent = Markdown.ToHtml(markdown, _pipeline);
+
+        // Restore Mermaid blocks AFTER Markdig processing
+        for (int i = 0; i < mermaidBlocks.Count; i++)
+        {
+            htmlContent = htmlContent.Replace(
+                $"<!--MERMAID_PLACEHOLDER_{i}-->",
+                $"<div class=\"mermaid\">\n{mermaidBlocks[i]}</div>"
+            );
+        }
+
+        return htmlContent;
+    }
+
     private async Task GenerateHtml(TabState tab)
     {
         try
         {
             var markdown = await File.ReadAllTextAsync(tab.FilePath);
-
-            // Extract Mermaid blocks BEFORE Markdig processing to protect from typography transforms
-            var mermaidBlocks = new List<string>();
-            markdown = System.Text.RegularExpressions.Regex.Replace(
-                markdown,
-                @"```mermaid\s*\n([\s\S]*?)```",
-                m => {
-                    mermaidBlocks.Add(m.Groups[1].Value);
-                    return $"<!--MERMAID_PLACEHOLDER_{mermaidBlocks.Count - 1}-->";
-                },
-                System.Text.RegularExpressions.RegexOptions.Multiline
-            );
-
-            // Ensure tables have a blank line before them (for Markdig compatibility)
-            markdown = System.Text.RegularExpressions.Regex.Replace(
-                markdown,
-                @"(\n[^\n\|]+)\n(\|[^\n]+\|)",
-                "$1\n\n$2",
-                System.Text.RegularExpressions.RegexOptions.Multiline
-            );
-
-            markdown = PreprocessMath(markdown);
-
-            var htmlContent = Markdown.ToHtml(markdown, _pipeline);
-
-            // Restore Mermaid blocks AFTER Markdig processing
-            for (int i = 0; i < mermaidBlocks.Count; i++)
-            {
-                htmlContent = htmlContent.Replace(
-                    $"<!--MERMAID_PLACEHOLDER_{i}-->",
-                    $"<div class=\"mermaid\">\n{mermaidBlocks[i]}</div>"
-                );
-            }
-
+            var htmlContent = ConvertMarkdownToHtml(markdown);
             var template = GetTemplate();
             tab.CachedHtml = template.Replace("{{CONTENT}}", htmlContent);
         }
@@ -1352,14 +2204,54 @@ public partial class MainWindow : Window
         return markdown;
     }
 
+    private bool _isClosingConfirmed;
+
+    protected override async void OnClosing(WindowClosingEventArgs e)
+    {
+        if (!_isClosingConfirmed)
+        {
+            var modifiedTabs = _tabs.Where(t => t.IsModified).ToList();
+            if (modifiedTabs.Count > 0)
+            {
+                e.Cancel = true;
+                var names = string.Join(", ", modifiedTabs.Select(t => t.FileName));
+                var result = await ShowUnsavedChangesDialog(names);
+
+                if (result == "Save")
+                {
+                    foreach (var tab in modifiedTabs)
+                    {
+                        if (!tab.IsNewFile && !string.IsNullOrEmpty(tab.FilePath))
+                        {
+                            await SaveTabToFile(tab, tab.FilePath);
+                        }
+                    }
+                }
+
+                if (result != "Cancel")
+                {
+                    _isClosingConfirmed = true;
+                    Close();
+                }
+            }
+        }
+
+        base.OnClosing(e);
+    }
+
     protected override void OnClosed(EventArgs e)
     {
+        _pipeCts?.Cancel();
+        _pipeCts?.Dispose();
+        _previewDebounceTimer?.Dispose();
+        _textMateInstallation?.Dispose();
+
         foreach (var tab in _tabs)
         {
             tab.Watcher?.Dispose();
             try { if (File.Exists(tab.TempHtmlPath)) File.Delete(tab.TempHtmlPath); } catch { }
         }
-        
+
         base.OnClosed(e);
     }
 }
