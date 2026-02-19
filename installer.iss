@@ -2,7 +2,7 @@
 ; Download Inno Setup from: https://jrsoftware.org/isinfo.php
 
 #define MyAppName "Simple Markdown Viewer"
-#define MyAppVersion "1.1.1"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "Your Name"
 #define MyAppURL "https://github.com/yourusername/SimpleMarkdownViewer"
 #define MyAppExeName "SimpleMarkdownViewer.exe"

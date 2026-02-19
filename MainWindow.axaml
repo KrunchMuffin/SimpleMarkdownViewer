@@ -1,20 +1,26 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:wv="clr-namespace:AvaloniaWebView;assembly=Avalonia.WebView"
+        xmlns:ae="clr-namespace:AvaloniaEdit;assembly=AvaloniaEdit"
         x:Class="SimpleMarkdownViewer.MainWindow"
         Title="Simple Markdown Viewer"
         Width="1200" Height="800"
         WindowStartupLocation="CenterScreen"
         Icon="avares://SimpleMarkdownViewer/Assets/app-icon-32.ico"
         DragDrop.AllowDrop="True">
-    
+
     <DockPanel x:Name="MainPanel">
         <!-- Menu Bar -->
         <Menu DockPanel.Dock="Top" x:Name="MainMenu">
             <MenuItem Header="_File">
+                <MenuItem Header="_New" Click="OnNewFileClick" InputGesture="Ctrl+N"/>
                 <MenuItem Header="_Open..." Click="OnOpenClick" InputGesture="Ctrl+O"/>
                 <MenuItem Header="_New from Clipboard" Click="OnNewFromClipboardClick" InputGesture="Ctrl+Shift+V"/>
                 <MenuItem Header="Open _Recent" x:Name="RecentMenu"/>
+                <Separator/>
+                <MenuItem Header="_Save" Click="OnSaveClick" InputGesture="Ctrl+S" x:Name="SaveMenuItem" IsEnabled="False"/>
+                <MenuItem Header="Save _As..." Click="OnSaveAsClick" InputGesture="Ctrl+Shift+S" x:Name="SaveAsMenuItem" IsEnabled="False"/>
+                <Separator/>
                 <MenuItem Header="_Close Tab" Click="OnCloseTabClick" InputGesture="Ctrl+W"/>
                 <Separator/>
                 <MenuItem Header="_Copy Markdown" Click="OnCopyMarkdownClick" InputGesture="Ctrl+Shift+C"/>
@@ -23,28 +29,57 @@
                 <MenuItem Header="E_xit" Click="OnExitClick"/>
             </MenuItem>
             <MenuItem Header="_View">
+                <MenuItem Header="_Edit Mode" Click="OnToggleEditModeClick" InputGesture="Ctrl+E" x:Name="EditModeMenuItem"/>
+                <Separator/>
                 <MenuItem Header="_Refresh" Click="OnRefreshClick" InputGesture="F5"/>
-                <MenuItem Header="_Dev Tools" Click="OnDevToolsClick" InputGesture="F12"/>
                 <Separator/>
                 <MenuItem x:Name="ThemeMenuItem" Header="_Dark Mode" Click="OnToggleThemeClick"/>
             </MenuItem>
             <MenuItem Header="_Help">
+                <MenuItem Header="_Dev Tools" Click="OnDevToolsClick" InputGesture="F12"/>
+                <Separator/>
                 <MenuItem Header="_About" Click="OnAboutClick"/>
             </MenuItem>
         </Menu>
-        
+
         <!-- Tab Strip -->
         <Border DockPanel.Dock="Top" Background="#e0e0e0" x:Name="TabStrip" Padding="4">
             <StackPanel x:Name="TabPanel" Orientation="Horizontal" Spacing="2"/>
         </Border>
-        
+
         <!-- Status Bar -->
         <Border DockPanel.Dock="Bottom" Background="#f0f0f0" Padding="8,4" x:Name="StatusBar">
             <TextBlock x:Name="StatusText" Text="Ready - Open a markdown file (Ctrl+O)" FontSize="12" Foreground="Black"/>
         </Border>
-        
-        <!-- Single WebView -->
-        <wv:WebView x:Name="WebView" Url="about:blank" Focusable="True"/>
+
+        <!-- Content Area: Editor + Preview -->
+        <Grid x:Name="ContentGrid">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="0"/>
+                <ColumnDefinition Width="0"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Editor Panel (hidden by default) -->
+            <ae:TextEditor x:Name="TextEditor"
+                           Grid.Column="0"
+                           FontFamily="Cascadia Code,Consolas,Menlo,Monospace"
+                           FontSize="14"
+                           ShowLineNumbers="True"
+                           WordWrap="True"
+                           IsVisible="False"/>
+
+            <!-- Grid Splitter (hidden by default) -->
+            <GridSplitter x:Name="EditorSplitter"
+                          Grid.Column="1"
+                          Width="4"
+                          ResizeDirection="Columns"
+                          Background="Gray"
+                          IsVisible="False"/>
+
+            <!-- WebView Preview -->
+            <wv:WebView x:Name="WebView" Grid.Column="2" Url="about:blank" Focusable="True"/>
+        </Grid>
     </DockPanel>
-    
+
 </Window>
