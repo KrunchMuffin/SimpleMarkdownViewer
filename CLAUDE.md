@@ -29,27 +29,31 @@ build-installer.bat
 
 ## Architecture
 
-This is a single-window Avalonia UI desktop application for viewing markdown files.
+This is a single-window Avalonia UI desktop application for viewing and editing markdown files with split-view live preview.
 
 ### Core Components
 
 - **MainWindow** (`MainWindow.axaml.cs`) - Contains all application logic in a single file:
   - Tab management (`TabState` class) - Each open file is a tab with its own file watcher
+  - Split-view editor - AvaloniaEdit text editor (left) with live WebView preview (right), toggled via Ctrl+E
   - Settings persistence (`AppSettings` class) - Dark mode preference and recent files stored in `%LocalAppData%/SimpleMarkdownViewer/settings.json`
   - Markdown rendering - Uses Markdig with preprocessing for Mermaid diagrams and KaTeX math
   - WebView integration - Renders HTML in WebView2 (Windows), WKWebView (macOS), or WebKitGTK (Linux)
+  - Context menus - Custom JS context menu in WebView preview; Avalonia context menu in editor with Format submenu
+- **Program.cs** - Entry point with single-instance support via named mutex and named pipe IPC
 
 ### Rendering Pipeline
 
-1. Markdown file is read
+1. Markdown file is read (explicit UTF-8 encoding)
 2. Preprocessed for Mermaid (`PreprocessMermaid`) and math (`PreprocessMath`)
-3. Converted to HTML via Markdig
+3. Converted to HTML via Markdig (`ConvertMarkdownToHtml`)
 4. Injected into HTML template (`GetTemplate`) with theme-aware styling
-5. Written to temp file and loaded in WebView
+5. Written to temp file (UTF-8 with BOM) and loaded in WebView
 
 ### Key Dependencies
 
-- **Avalonia 11.2.1** - Cross-platform UI framework
+- **Avalonia 11.3.12** - Cross-platform UI framework
+- **AvaloniaEdit** - Code editor control with TextMate syntax highlighting
 - **WebView.Avalonia** - Cross-platform WebView wrapper
 - **Markdig** - Markdown parsing with advanced extensions
 - Client-side: highlight.js, Mermaid, KaTeX (loaded from CDN)
