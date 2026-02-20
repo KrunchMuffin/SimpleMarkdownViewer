@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -656,7 +657,7 @@ public partial class MainWindow : Window
         var bgColor = _isDarkMode ? "#0d1117" : "#ffffff";
         var textColor = _isDarkMode ? "#8b949e" : "#656d76";
         return $@"<!DOCTYPE html>
-<html><head><style>
+<html><head><meta charset=""UTF-8""><style>
     body {{ background-color: {bgColor}; color: {textColor}; font-family: -apple-system, sans-serif; 
            display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }}
     .welcome {{ text-align: center; }}
@@ -1342,8 +1343,8 @@ public partial class MainWindow : Window
             
             // Create a temp file with the clipboard content
             var tempPath = Path.Combine(Path.GetTempPath(), $"Clipboard_{DateTime.Now:yyyyMMdd_HHmmss}.md");
-            await File.WriteAllTextAsync(tempPath, text);
-            
+            await File.WriteAllTextAsync(tempPath, text, new UTF8Encoding(true));
+
             // Open it in a new tab
             await OpenFileInNewTab(tempPath);
             _statusText.Text = $"Opened markdown from clipboard ({text.Length} chars)";
@@ -1623,7 +1624,7 @@ public partial class MainWindow : Window
             // First time entering edit mode for this tab -- load from file
             if (File.Exists(tab.FilePath))
             {
-                var content = File.ReadAllText(tab.FilePath);
+                var content = File.ReadAllText(tab.FilePath, Encoding.UTF8);
                 tab.OriginalContent = content;
                 tab.EditContent = content;
             }
@@ -1765,7 +1766,7 @@ public partial class MainWindow : Window
             if (tab.Watcher != null)
                 tab.Watcher.EnableRaisingEvents = false;
 
-            await File.WriteAllTextAsync(filePath, tab.EditContent);
+            await File.WriteAllTextAsync(filePath, tab.EditContent, new UTF8Encoding(false));
 
             tab.OriginalContent = tab.EditContent;
             tab.IsModified = false;
@@ -1880,7 +1881,7 @@ public partial class MainWindow : Window
         var tab = _tabs[_selectedTabIndex];
         try
         {
-            var markdown = _isEditMode ? tab.EditContent : await File.ReadAllTextAsync(tab.FilePath);
+            var markdown = _isEditMode ? tab.EditContent : await File.ReadAllTextAsync(tab.FilePath, Encoding.UTF8);
             var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
             if (clipboard != null)
             {
@@ -1972,7 +1973,7 @@ public partial class MainWindow : Window
             Spacing = 8
         };
         info.Children.Add(new TextBlock { Text = "Simple Markdown Viewer", FontSize = 20, FontWeight = Avalonia.Media.FontWeight.Bold, HorizontalAlignment = HorizontalAlignment.Center });
-        info.Children.Add(new TextBlock { Text = "Version 1.2.0", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
+        info.Children.Add(new TextBlock { Text = "Version 1.2.1", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "A lightweight markdown viewer with\nlive reload, tabs, and dark mode.", TextAlignment = Avalonia.Media.TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "Built with Avalonia UI, WebView2, and Markdig", FontSize = 11, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
         
@@ -2075,7 +2076,7 @@ public partial class MainWindow : Window
                 // Also update the editor content if in edit mode
                 if (_isEditMode && File.Exists(tab.FilePath))
                 {
-                    var content = await File.ReadAllTextAsync(tab.FilePath);
+                    var content = await File.ReadAllTextAsync(tab.FilePath, Encoding.UTF8);
                     tab.OriginalContent = content;
                     tab.EditContent = content;
 
@@ -2142,14 +2143,14 @@ public partial class MainWindow : Window
     {
         try
         {
-            var markdown = await File.ReadAllTextAsync(tab.FilePath);
+            var markdown = await File.ReadAllTextAsync(tab.FilePath, Encoding.UTF8);
             var htmlContent = ConvertMarkdownToHtml(markdown);
             var template = GetTemplate();
             tab.CachedHtml = template.Replace("{{CONTENT}}", htmlContent);
         }
         catch (Exception ex)
         {
-            tab.CachedHtml = $"<html><body><h1>Error</h1><p>{ex.Message}</p></body></html>";
+            tab.CachedHtml = $"<html><head><meta charset=\"UTF-8\"></head><body><h1>Error</h1><p>{ex.Message}</p></body></html>";
         }
     }
 
@@ -2164,7 +2165,7 @@ public partial class MainWindow : Window
         try
         {
             var tempPath = Path.Combine(Path.GetTempPath(), $"mdviewer_current_{Guid.NewGuid():N}.html");
-            File.WriteAllText(tempPath, html);
+            File.WriteAllText(tempPath, html, new UTF8Encoding(true));
             _webView.Url = new Uri(tempPath);
 
             // Force focus and visual update after navigation
