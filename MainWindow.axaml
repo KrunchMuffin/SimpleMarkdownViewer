@@ -18,8 +18,8 @@
                 <MenuItem Header="_New from Clipboard" Click="OnNewFromClipboardClick" InputGesture="Ctrl+Shift+V"/>
                 <MenuItem Header="Open _Recent" x:Name="RecentMenu"/>
                 <Separator/>
-                <MenuItem Header="_Save" Click="OnSaveClick" InputGesture="Ctrl+S" x:Name="SaveMenuItem" IsEnabled="False"/>
-                <MenuItem Header="Save _As..." Click="OnSaveAsClick" InputGesture="Ctrl+Shift+S" x:Name="SaveAsMenuItem" IsEnabled="False"/>
+                <MenuItem Header="_Save" Click="OnSaveClick" InputGesture="Ctrl+S" x:Name="SaveMenuItem"/>
+                <MenuItem Header="Save _As..." Click="OnSaveAsClick" InputGesture="Ctrl+Shift+S" x:Name="SaveAsMenuItem"/>
                 <Separator/>
                 <MenuItem Header="_Close Tab" Click="OnCloseTabClick" InputGesture="Ctrl+W"/>
                 <Separator/>

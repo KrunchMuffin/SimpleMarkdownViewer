@@ -83,6 +83,7 @@ public partial class MainWindow : Window
         public bool IsModified { get; set; }
         public string OriginalContent { get; set; } = "";
         public string EditContent { get; set; } = "";
+        public bool HasLoadedEditor { get; set; }
         public bool IsNewFile { get; set; }
         public string? DisplayName { get; set; }
     }
@@ -1584,8 +1585,6 @@ public partial class MainWindow : Window
             _textEditor.IsVisible = true;
             _editorSplitter.IsVisible = true;
             _editModeMenuItem.Header = "Exit _Edit Mode";
-            _saveMenuItem.IsEnabled = true;
-            _saveAsMenuItem.IsEnabled = true;
 
             LoadCurrentTabIntoEditor();
         }
@@ -1619,7 +1618,7 @@ public partial class MainWindow : Window
         if (_selectedTabIndex < 0 || _selectedTabIndex >= _tabs.Count) return;
         var tab = _tabs[_selectedTabIndex];
 
-        if (string.IsNullOrEmpty(tab.EditContent) && !tab.IsNewFile)
+        if (!tab.HasLoadedEditor && !tab.IsNewFile)
         {
             // First time entering edit mode for this tab -- load from file
             if (File.Exists(tab.FilePath))
@@ -1627,20 +1626,23 @@ public partial class MainWindow : Window
                 var content = File.ReadAllText(tab.FilePath, Encoding.UTF8);
                 tab.OriginalContent = content;
                 tab.EditContent = content;
+                tab.HasLoadedEditor = true;
             }
         }
 
         // Suppress TextChanged while loading
         _textEditor.TextChanged -= OnEditorTextChanged;
-        _textEditor.Text = tab.EditContent;
+        _textEditor.Document.Text = tab.EditContent ?? "";
         _textEditor.TextChanged += OnEditorTextChanged;
     }
 
     private void UpdateSaveMenuState()
     {
-        var anyModified = _tabs.Any(t => t.IsModified);
-        _saveMenuItem.IsEnabled = _isEditMode || anyModified;
-        _saveAsMenuItem.IsEnabled = _isEditMode || _tabs.Count > 0;
+        // Keep menu items always enabled so Ctrl+S/Ctrl+Shift+S shortcuts work
+        // and can show informative status message; guards in OnSaveClick/OnSaveAsClick
+        // prevent saving when not in edit mode
+        _saveMenuItem.IsEnabled = true;
+        _saveAsMenuItem.IsEnabled = true;
     }
 
     private void OnEditorTextChanged(object? sender, EventArgs e)
@@ -1707,6 +1709,12 @@ public partial class MainWindow : Window
         if (_selectedTabIndex < 0 || _selectedTabIndex >= _tabs.Count) return;
         var tab = _tabs[_selectedTabIndex];
 
+        if (!_isEditMode || !tab.HasLoadedEditor)
+        {
+            _statusText.Text = "Enter edit mode (Ctrl+E) before saving.";
+            return;
+        }
+
         if (tab.IsNewFile || string.IsNullOrEmpty(tab.FilePath))
         {
             OnSaveAsClick(sender, e);
@@ -1720,6 +1728,12 @@ public partial class MainWindow : Window
     {
         if (_selectedTabIndex < 0 || _selectedTabIndex >= _tabs.Count) return;
         var tab = _tabs[_selectedTabIndex];
+
+        if (!_isEditMode || !tab.HasLoadedEditor)
+        {
+            _statusText.Text = "Enter edit mode (Ctrl+E) before saving.";
+            return;
+        }
 
         try
         {
@@ -1797,6 +1811,7 @@ public partial class MainWindow : Window
             FilePath = "",
             TempHtmlPath = Path.Combine(Path.GetTempPath(), $"mdviewer_{Guid.NewGuid():N}.html"),
             IsNewFile = true,
+            HasLoadedEditor = true,
             DisplayName = displayName,
             EditContent = "",
             OriginalContent = ""
