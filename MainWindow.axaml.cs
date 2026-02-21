@@ -2164,7 +2164,7 @@ public partial class MainWindow : Window
         {
             Title = "About",
             Width = 400,
-            Height = 250,
+            Height = 300,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             CanResize = false,
             SystemDecorations = SystemDecorations.Full,
@@ -2184,10 +2184,18 @@ public partial class MainWindow : Window
             Spacing = 8
         };
         info.Children.Add(new TextBlock { Text = "Simple Markdown Viewer", FontSize = 20, FontWeight = Avalonia.Media.FontWeight.Bold, HorizontalAlignment = HorizontalAlignment.Center });
-        info.Children.Add(new TextBlock { Text = "Version 1.3.0", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
+        info.Children.Add(new TextBlock { Text = "Version 1.3.1", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "A lightweight markdown viewer and editor\nwith live preview, tabs, custom CSS, and dark mode.", TextAlignment = Avalonia.Media.TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "Built with Avalonia UI, WebView2, and Markdig", FontSize = 11, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
-        
+
+        var dabWorxLink = new TextBlock { Text = "An open source project by DAB Worx Inc.", FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center, Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#0066cc")), Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand), TextDecorations = Avalonia.Media.TextDecorations.Underline };
+        dabWorxLink.Tapped += (s, args) => { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = "https://dabworx.com", UseShellExecute = true }); } catch { } };
+        info.Children.Add(dabWorxLink);
+
+        var repoLink = new TextBlock { Text = "GitHub Repository", FontSize = 11, HorizontalAlignment = HorizontalAlignment.Center, Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#0066cc")), Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand), TextDecorations = Avalonia.Media.TextDecorations.Underline };
+        repoLink.Tapped += (s, args) => { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = "https://github.com/KrunchMuffin/SimpleMarkdownViewer", UseShellExecute = true }); } catch { } };
+        info.Children.Add(repoLink);
+
         Grid.SetRow(info, 0);
         grid.Children.Add(info);
         
