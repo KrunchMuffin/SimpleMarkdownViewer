@@ -34,6 +34,9 @@
                 <MenuItem Header="_Refresh" Click="OnRefreshClick" InputGesture="F5"/>
                 <Separator/>
                 <MenuItem x:Name="ThemeMenuItem" Header="_Dark Mode" Click="OnToggleThemeClick"/>
+                <MenuItem x:Name="LineNumbersMenuItem" Header="Preview _Line Numbers" Click="OnToggleLineNumbersClick"/>
+                <Separator/>
+                <MenuItem Header="Open _Custom CSS" Click="OnOpenCustomCssClick"/>
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_Dev Tools" Click="OnDevToolsClick" InputGesture="F12"/>
@@ -43,8 +46,29 @@
         </Menu>
 
         <!-- Tab Strip -->
-        <Border DockPanel.Dock="Top" Background="#e0e0e0" x:Name="TabStrip" Padding="4">
-            <StackPanel x:Name="TabPanel" Orientation="Horizontal" Spacing="2"/>
+        <Border DockPanel.Dock="Top" Background="#e0e0e0" x:Name="TabStrip" Padding="4,4,4,4">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Button x:Name="TabScrollLeft" Grid.Column="0" Content="◀" Padding="4,2" FontSize="10"
+                        Background="Transparent" BorderThickness="0" IsVisible="False"
+                        VerticalAlignment="Center" Click="OnTabScrollLeftClick"/>
+                <ScrollViewer x:Name="TabScrollViewer" Grid.Column="1"
+                              HorizontalScrollBarVisibility="Hidden"
+                              VerticalScrollBarVisibility="Disabled">
+                    <StackPanel x:Name="TabPanel" Orientation="Horizontal" Spacing="2"/>
+                </ScrollViewer>
+                <Button x:Name="TabScrollRight" Grid.Column="2" Content="▶" Padding="4,2" FontSize="10"
+                        Background="Transparent" BorderThickness="0" IsVisible="False"
+                        VerticalAlignment="Center" Click="OnTabScrollRightClick"/>
+                <Button x:Name="TabDropdown" Grid.Column="3" Content="▼" Padding="4,2" FontSize="10"
+                        Background="Transparent" BorderThickness="0"
+                        VerticalAlignment="Center" Click="OnTabDropdownClick"/>
+            </Grid>
         </Border>
 
         <!-- Status Bar -->
