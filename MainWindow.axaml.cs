@@ -18,6 +18,7 @@ using AvaloniaEdit;
 using AvaloniaEdit.TextMate;
 using AvaloniaWebView;
 using Markdig;
+using Markdig.Renderers.Html;
 using TextMateSharp.Grammars;
 using WebViewCore.Events;
 
@@ -30,17 +31,24 @@ public partial class MainWindow : Window
     private readonly Border _statusBar;
     private readonly Border _tabStrip;
     private readonly StackPanel _tabPanel;
+    private readonly ScrollViewer _tabScrollViewer;
+    private readonly Button _tabScrollLeft;
+    private readonly Button _tabScrollRight;
+    private readonly Button _tabDropdown;
     private readonly MenuItem _themeMenuItem;
+    private readonly MenuItem _lineNumbersMenuItem;
     private readonly DockPanel _mainPanel;
     private readonly MenuItem _recentMenu = null!;
     private readonly MarkdownPipeline _pipeline;
     
-    private static readonly string SettingsPath = Path.Combine(
+    private static readonly string SettingsDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "SimpleMarkdownViewer",
-        "settings.json");
+        "SimpleMarkdownViewer");
+
+    private static readonly string SettingsPath = Path.Combine(SettingsDir, "settings.json");
     
     private bool _isDarkMode = false;
+    private bool _showPreviewLineNumbers = false;
     private bool _webViewReady = false;
     private string? _pendingHtml = null;
     
@@ -91,6 +99,7 @@ public partial class MainWindow : Window
     private class AppSettings
     {
         public bool IsDarkMode { get; set; } = false;
+        public bool ShowPreviewLineNumbers { get; set; } = false;
         public List<string> RecentFiles { get; set; } = new();
     }
 
@@ -105,6 +114,7 @@ public partial class MainWindow : Window
                 if (settings != null)
                 {
                     _isDarkMode = settings.IsDarkMode;
+                    _showPreviewLineNumbers = settings.ShowPreviewLineNumbers;
                     _recentFiles.Clear();
                     _recentFiles.AddRange(settings.RecentFiles.Where(File.Exists).Take(MaxRecentFiles));
                 }
@@ -127,6 +137,7 @@ public partial class MainWindow : Window
             var settings = new AppSettings 
             { 
                 IsDarkMode = _isDarkMode,
+                ShowPreviewLineNumbers = _showPreviewLineNumbers,
                 RecentFiles = _recentFiles.ToList()
             };
             var json = JsonSerializer.Serialize(settings);
@@ -196,11 +207,16 @@ public partial class MainWindow : Window
     private void ApplyTheme()
     {
         _themeMenuItem.Header = _isDarkMode ? "_Light Mode" : "_Dark Mode";
+        _lineNumbersMenuItem.Header = _showPreviewLineNumbers ? "Hide Preview _Line Numbers" : "Preview _Line Numbers";
         RequestedThemeVariant = _isDarkMode ? Avalonia.Styling.ThemeVariant.Dark : Avalonia.Styling.ThemeVariant.Light;
         _mainPanel.Background = new SolidColorBrush(Color.Parse(_isDarkMode ? "#1e1e1e" : "#ffffff"));
         _statusBar.Background = new SolidColorBrush(Color.Parse(_isDarkMode ? "#1e1e1e" : "#f0f0f0"));
         _statusText.Foreground = _isDarkMode ? Brushes.White : Brushes.Black;
         _tabStrip.Background = new SolidColorBrush(Color.Parse(_isDarkMode ? "#252525" : "#e0e0e0"));
+        var tabBtnFg = new SolidColorBrush(Color.Parse(_isDarkMode ? "#aaaaaa" : "#555555"));
+        _tabScrollLeft.Foreground = tabBtnFg;
+        _tabScrollRight.Foreground = tabBtnFg;
+        _tabDropdown.Foreground = tabBtnFg;
     }
 
     public MainWindow()
@@ -212,7 +228,12 @@ public partial class MainWindow : Window
         _statusBar = this.FindControl<Border>("StatusBar")!;
         _tabStrip = this.FindControl<Border>("TabStrip")!;
         _tabPanel = this.FindControl<StackPanel>("TabPanel")!;
+        _tabScrollViewer = this.FindControl<ScrollViewer>("TabScrollViewer")!;
+        _tabScrollLeft = this.FindControl<Button>("TabScrollLeft")!;
+        _tabScrollRight = this.FindControl<Button>("TabScrollRight")!;
+        _tabDropdown = this.FindControl<Button>("TabDropdown")!;
         _themeMenuItem = this.FindControl<MenuItem>("ThemeMenuItem")!;
+        _lineNumbersMenuItem = this.FindControl<MenuItem>("LineNumbersMenuItem")!;
         _mainPanel = this.FindControl<DockPanel>("MainPanel")!;
         _recentMenu = this.FindControl<MenuItem>("RecentMenu")!;
 
@@ -225,6 +246,10 @@ public partial class MainWindow : Window
         _editModeMenuItem = this.FindControl<MenuItem>("EditModeMenuItem")!;
         _saveMenuItem = this.FindControl<MenuItem>("SaveMenuItem")!;
         _saveAsMenuItem = this.FindControl<MenuItem>("SaveAsMenuItem")!;
+
+        // Tab scroll overflow detection
+        _tabScrollViewer.ScrollChanged += (s, e) => UpdateTabScrollButtons();
+        this.SizeChanged += (s, e) => UpdateTabScrollButtons();
 
         // Load settings
         LoadSettings();
@@ -727,6 +752,22 @@ public partial class MainWindow : Window
         }
     }
 
+    private string GetCustomCssTag()
+    {
+        var cssFile = _isDarkMode ? "custom-dark.css" : "custom-light.css";
+        var cssPath = Path.Combine(SettingsDir, cssFile);
+        if (File.Exists(cssPath))
+        {
+            try
+            {
+                var css = File.ReadAllText(cssPath, Encoding.UTF8);
+                return $"<style>\n/* Custom CSS: {cssFile} */\n{css}\n</style>";
+            }
+            catch { }
+        }
+        return "";
+    }
+
     private string GetTemplate()
     {
         var bgColor = _isDarkMode ? "#0d1117" : "#ffffff";
@@ -983,36 +1024,97 @@ public partial class MainWindow : Window
             margin: 4px 0;
         }}
 
+{(_showPreviewLineNumbers ? $@"
+        /* Preview line numbers */
+        #content [data-line] {{
+            position: relative;
+            padding-left: 3.5em;
+        }}
+        #content [data-line]::before {{
+            content: attr(data-line);
+            position: absolute;
+            left: 0;
+            width: 2.5em;
+            text-align: right;
+            color: {blockquoteColor};
+            font-size: 12px;
+            font-family: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
+            line-height: inherit;
+            padding-top: 0.15em;
+            opacity: 0.6;
+            border-right: 1px solid {borderColor};
+            padding-right: 0.5em;
+        }}
+        /* Prevent nested containers from double-indenting */
+        #content [data-line] [data-line] {{
+            padding-left: 0;
+        }}
+        #content [data-line] [data-line]::before {{
+            left: -3.5em;
+        }}
+" : "")}
+    </style>
+    {GetCustomCssTag()}
+    <style>
         @media print {{
-            body {{
+            *, *::before, *::after {{
                 color: #000000 !important;
-                background-color: #ffffff !important;
+                text-shadow: none !important;
+                box-shadow: none !important;
+            }}
+            html, body {{
+                background: #ffffff !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                min-height: auto !important;
+                border: none !important;
+                font-size: 12pt !important;
+            }}
+            body::before, body::after {{
+                display: none !important;
+            }}
+            #content, .markdown-body {{
+                padding: 0 !important;
+                margin: 0 !important;
+                border: none !important;
+                box-shadow: none !important;
+                max-width: 100% !important;
+                min-height: auto !important;
             }}
             h1, h2, h3, h4, h5, h6 {{
                 color: #000000 !important;
                 border-color: #d0d7de !important;
+                text-shadow: none !important;
             }}
             a {{ color: #0969da !important; }}
+            p, li, td, th, blockquote, span, em, strong, del {{
+                color: #000000 !important;
+            }}
             code, pre {{
                 background-color: #f6f8fa !important;
                 color: #000000 !important;
+                border-color: #d0d7de !important;
             }}
+            pre::before {{ display: none !important; }}
+            pre > code {{ background: #f6f8fa !important; color: #000000 !important; }}
             th, td {{
                 border-color: #d0d7de !important;
-                color: #000000 !important;
             }}
             th {{ background-color: #f6f8fa !important; }}
-            blockquote {{ color: #656d76 !important; border-color: #d0d7de !important; }}
-            kbd {{ color: #000000 !important; background-color: #f6f8fa !important; border-color: #d0d7de !important; }}
-            hr {{ background-color: #d0d7de !important; }}
+            blockquote {{ border-color: #d0d7de !important; background: transparent !important; }}
+            blockquote::before {{ display: none !important; }}
+            kbd {{ background-color: #f6f8fa !important; border-color: #d0d7de !important; }}
+            hr {{ background-color: #d0d7de !important; height: 1px !important; }}
+            hr::after {{ color: #999999 !important; }}
+            img {{ box-shadow: none !important; border-color: #d0d7de !important; }}
             .mermaid {{ border-color: #d0d7de !important; }}
-            .mermaid::after {{ display: none; }}
-            .fullscreen-overlay, .fullscreen-controls {{ display: none !important; }}
+            .mermaid::after {{ display: none !important; }}
+            .fullscreen-overlay, .fullscreen-controls, .ctx-menu {{ display: none !important; }}
         }}
     </style>
 </head>
 <body>
-    <article id=""content"">
+    <article id=""content"" class=""markdown-body"">
         {{{{CONTENT}}}}
     </article>
 
@@ -1031,7 +1133,7 @@ public partial class MainWindow : Window
 
     <!-- Custom context menu -->
     <div id=""ctxMenu"" class=""ctx-menu"">
-        <div class=""ctx-menu-item"" id=""ctxEdit"">Edit<span class=""shortcut"">Ctrl+E</span></div>
+        <div class=""ctx-menu-item"" id=""ctxEdit"">{(_isEditMode ? "Exit Edit Mode" : "Edit")}<span class=""shortcut"">Ctrl+E</span></div>
         <div class=""ctx-menu-sep""></div>
         <div class=""ctx-menu-item"" id=""ctxCopy"">Copy<span class=""shortcut"">Ctrl+C</span></div>
         <div class=""ctx-menu-item"" id=""ctxSelectAll"">Select All<span class=""shortcut"">Ctrl+A</span></div>
@@ -1378,7 +1480,8 @@ public partial class MainWindow : Window
         var button = CreateTabButton(tab);
         tab.TabButton = button;
         _tabPanel.Children.Add(button);
-        
+        UpdateTabScrollButtons();
+
         _tabs.Add(tab);
         
         // Set up file watcher
@@ -1430,14 +1533,79 @@ public partial class MainWindow : Window
             var idx = _tabs.IndexOf(tab);
             if (idx >= 0) SelectTab(idx);
         };
-        
+
         closeBtn.Click += (s, e) =>
         {
             e.Handled = true;
             CloseTab(tab);
         };
-        
+
+        // Right-click context menu
+        var ctxClose = new MenuItem { Header = "Close" };
+        ctxClose.Click += (s, e) => CloseTab(tab);
+
+        var ctxCloseOthers = new MenuItem { Header = "Close Others" };
+        ctxCloseOthers.Click += (s, e) => CloseOtherTabs(tab);
+
+        var ctxCloseRight = new MenuItem { Header = "Close to the Right" };
+        ctxCloseRight.Click += (s, e) => CloseTabsToTheRight(tab);
+
+        var ctxCloseAll = new MenuItem { Header = "Close All" };
+        ctxCloseAll.Click += (s, e) => CloseAllTabs();
+
+        button.ContextMenu = new ContextMenu
+        {
+            Items = { ctxClose, ctxCloseOthers, ctxCloseRight, new Separator(), ctxCloseAll }
+        };
+
         return button;
+    }
+
+    private void UpdateTabScrollButtons()
+    {
+        var hasOverflow = _tabScrollViewer.Extent.Width > _tabScrollViewer.Viewport.Width;
+        _tabScrollLeft.IsVisible = hasOverflow;
+        _tabScrollRight.IsVisible = hasOverflow;
+    }
+
+    private void OnTabScrollLeftClick(object? sender, RoutedEventArgs e)
+    {
+        var newOffset = Math.Max(0, _tabScrollViewer.Offset.X - 150);
+        _tabScrollViewer.Offset = new Vector(newOffset, 0);
+    }
+
+    private void OnTabScrollRightClick(object? sender, RoutedEventArgs e)
+    {
+        var maxOffset = _tabScrollViewer.Extent.Width - _tabScrollViewer.Viewport.Width;
+        var newOffset = Math.Min(maxOffset, _tabScrollViewer.Offset.X + 150);
+        _tabScrollViewer.Offset = new Vector(newOffset, 0);
+    }
+
+    private void OnTabDropdownClick(object? sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu();
+        for (int i = 0; i < _tabs.Count; i++)
+        {
+            var tab = _tabs[i];
+            var idx = i;
+            var name = tab.FileName;
+            if (tab.IsModified) name = "* " + name;
+            var item = new MenuItem { Header = name };
+            if (i == _selectedTabIndex)
+                item.Icon = new TextBlock { Text = "●", FontSize = 8, VerticalAlignment = VerticalAlignment.Center };
+            item.Click += (s, args) => SelectTab(idx);
+            menu.Items.Add(item);
+        }
+        menu.Open(_tabDropdown);
+    }
+
+    private void ScrollSelectedTabIntoView()
+    {
+        if (_selectedTabIndex >= 0 && _selectedTabIndex < _tabs.Count)
+        {
+            var btn = _tabs[_selectedTabIndex].TabButton;
+            btn?.BringIntoView();
+        }
     }
 
     private void SelectTab(int index)
@@ -1493,6 +1661,8 @@ public partial class MainWindow : Window
             tab.CachedHtml = template.Replace("{{CONTENT}}", "<p><em>Start typing in the editor...</em></p>");
             RenderHtml(tab.CachedHtml);
         }
+
+        ScrollSelectedTabIntoView();
     }
 
     private async void CloseTab(TabState tab)
@@ -1541,6 +1711,7 @@ public partial class MainWindow : Window
         // Remove from UI
         if (tab.TabButton != null)
             _tabPanel.Children.Remove(tab.TabButton);
+        UpdateTabScrollButtons();
 
         _tabs.RemoveAt(index);
 
@@ -1562,6 +1733,29 @@ public partial class MainWindow : Window
         {
             SelectTab(Math.Min(index, _tabs.Count - 1));
         }
+    }
+
+    private void CloseOtherTabs(TabState keepTab)
+    {
+        var toClose = _tabs.Where(t => t != keepTab).ToList();
+        foreach (var t in toClose)
+            CloseTab(t);
+    }
+
+    private void CloseTabsToTheRight(TabState tab)
+    {
+        var idx = _tabs.IndexOf(tab);
+        if (idx < 0) return;
+        var toClose = _tabs.Skip(idx + 1).ToList();
+        foreach (var t in toClose)
+            CloseTab(t);
+    }
+
+    private void CloseAllTabs()
+    {
+        var toClose = _tabs.ToList();
+        foreach (var t in toClose)
+            CloseTab(t);
     }
 
     private void OnCloseTabClick(object? sender, RoutedEventArgs e)
@@ -1587,6 +1781,7 @@ public partial class MainWindow : Window
             _editModeMenuItem.Header = "Exit _Edit Mode";
 
             LoadCurrentTabIntoEditor();
+            _textEditor.Focus();
         }
         else
         {
@@ -1820,6 +2015,7 @@ public partial class MainWindow : Window
         var button = CreateTabButton(tab);
         tab.TabButton = button;
         _tabPanel.Children.Add(button);
+        UpdateTabScrollButtons();
         _tabs.Add(tab);
 
         // Auto-enable edit mode if not already
@@ -1988,8 +2184,8 @@ public partial class MainWindow : Window
             Spacing = 8
         };
         info.Children.Add(new TextBlock { Text = "Simple Markdown Viewer", FontSize = 20, FontWeight = Avalonia.Media.FontWeight.Bold, HorizontalAlignment = HorizontalAlignment.Center });
-        info.Children.Add(new TextBlock { Text = "Version 1.2.2", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
-        info.Children.Add(new TextBlock { Text = "A lightweight markdown viewer with\nlive reload, tabs, and dark mode.", TextAlignment = Avalonia.Media.TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center });
+        info.Children.Add(new TextBlock { Text = "Version 1.3.0", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
+        info.Children.Add(new TextBlock { Text = "A lightweight markdown viewer and editor\nwith live preview, tabs, custom CSS, and dark mode.", TextAlignment = Avalonia.Media.TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "Built with Avalonia UI, WebView2, and Markdig", FontSize = 11, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
         
         Grid.SetRow(info, 0);
@@ -2060,6 +2256,153 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void OnToggleLineNumbersClick(object? sender, RoutedEventArgs e)
+    {
+        _showPreviewLineNumbers = !_showPreviewLineNumbers;
+        _lineNumbersMenuItem.Header = _showPreviewLineNumbers ? "Hide Preview _Line Numbers" : "Preview _Line Numbers";
+        SaveSettings();
+
+        // Regenerate all tabs with updated template
+        foreach (var tab in _tabs)
+        {
+            if (tab.IsNewFile && _isEditMode)
+            {
+                var htmlContent = ConvertMarkdownToHtml(tab.EditContent);
+                var template = GetTemplate();
+                tab.CachedHtml = template.Replace("{{CONTENT}}", htmlContent);
+            }
+            else if (!tab.IsNewFile)
+            {
+                await GenerateHtml(tab);
+            }
+        }
+
+        // Re-render current tab
+        if (_selectedTabIndex >= 0 && _selectedTabIndex < _tabs.Count)
+        {
+            var tab = _tabs[_selectedTabIndex];
+            if (tab.CachedHtml != null)
+                RenderHtml(tab.CachedHtml);
+        }
+        else
+        {
+            RenderHtml(GetWelcomePage());
+        }
+    }
+
+    private void OnOpenCustomCssClick(object? sender, RoutedEventArgs e)
+    {
+        var cssFile = _isDarkMode ? "custom-dark.css" : "custom-light.css";
+        var cssPath = Path.Combine(SettingsDir, cssFile);
+
+        if (!Directory.Exists(SettingsDir))
+            Directory.CreateDirectory(SettingsDir);
+
+        if (!File.Exists(cssPath))
+        {
+            // Export built-in styles as starting point
+            var defaults = GetBuiltInCss();
+            File.WriteAllText(cssPath, defaults, Encoding.UTF8);
+        }
+
+        // Open in default editor
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = cssPath,
+                UseShellExecute = true
+            });
+            _statusText.Text = $"Opened {cssFile} — edit, save, then Refresh (F5) to apply.";
+        }
+        catch (Exception ex)
+        {
+            _statusText.Text = $"Could not open {cssFile}: {ex.Message}";
+        }
+    }
+
+    private string GetBuiltInCss()
+    {
+        var mode = _isDarkMode ? "dark" : "light";
+        var bgColor = _isDarkMode ? "#0d1117" : "#ffffff";
+        var textColor = _isDarkMode ? "#e6edf3" : "#24292f";
+        var codeBg = _isDarkMode ? "#161b22" : "#f6f8fa";
+        var borderColor = _isDarkMode ? "#30363d" : "#d0d7de";
+        var linkColor = _isDarkMode ? "#58a6ff" : "#0969da";
+        var blockquoteColor = _isDarkMode ? "#8b949e" : "#656d76";
+        var headingColor = _isDarkMode ? "#e6edf3" : "#1f2328";
+
+        return $@"/* SimpleMarkdownViewer Custom CSS ({mode} mode)
+   Edit this file to override the built-in styles.
+   Save and press F5 (Refresh) in the viewer to apply.
+   Delete this file to revert to defaults. */
+
+body {{
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    color: {textColor};
+    background-color: {bgColor};
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 32px;
+}}
+
+h1, h2, h3, h4, h5, h6 {{
+    color: {headingColor};
+    margin-top: 24px;
+    margin-bottom: 16px;
+    font-weight: 600;
+    line-height: 1.25;
+}}
+
+h1 {{ font-size: 2em; padding-bottom: 0.3em; border-bottom: 1px solid {borderColor}; }}
+h2 {{ font-size: 1.5em; padding-bottom: 0.3em; border-bottom: 1px solid {borderColor}; }}
+h3 {{ font-size: 1.25em; }}
+
+a {{ color: {linkColor}; text-decoration: none; }}
+a:hover {{ text-decoration: underline; }}
+
+code {{
+    font-family: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
+    font-size: 85%;
+    background-color: {codeBg};
+    padding: 0.2em 0.4em;
+    border-radius: 6px;
+}}
+
+pre {{
+    background-color: {codeBg};
+    padding: 16px;
+    border-radius: 6px;
+    overflow-x: auto;
+}}
+
+pre code {{
+    background-color: transparent;
+    padding: 0;
+    font-size: 100%;
+}}
+
+table {{ border-collapse: collapse; width: 100%; margin: 16px 0; }}
+th, td {{ border: 1px solid {borderColor}; padding: 8px 13px; text-align: left; }}
+th {{ background-color: {codeBg}; font-weight: 600; }}
+
+blockquote {{
+    margin: 16px 0;
+    padding: 0 1em;
+    color: {blockquoteColor};
+    border-left: 4px solid {borderColor};
+}}
+
+ul, ol {{ padding-left: 2em; margin: 16px 0; }}
+
+img {{ max-width: 100%; height: auto; }}
+
+hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }}
+";
+    }
+
     private void SetupFileWatcher(TabState tab)
     {
         tab.Watcher?.Dispose();
@@ -2116,6 +2459,16 @@ public partial class MainWindow : Window
         tab.Watcher.EnableRaisingEvents = true;
     }
 
+    private void AddLineNumbers(Markdig.Syntax.ContainerBlock container)
+    {
+        foreach (var block in container)
+        {
+            block.GetAttributes().AddProperty("data-line", (block.Line + 1).ToString());
+            if (block is Markdig.Syntax.ContainerBlock childContainer)
+                AddLineNumbers(childContainer);
+        }
+    }
+
     private string ConvertMarkdownToHtml(string markdown)
     {
         // Extract Mermaid blocks BEFORE Markdig processing to protect from typography transforms
@@ -2140,7 +2493,23 @@ public partial class MainWindow : Window
 
         markdown = PreprocessMath(markdown);
 
-        var htmlContent = Markdown.ToHtml(markdown, _pipeline);
+        string htmlContent;
+        if (_showPreviewLineNumbers)
+        {
+            var document = Markdown.Parse(markdown, _pipeline);
+            // Inject source line numbers as data attributes on all blocks
+            AddLineNumbers(document);
+            using var writer = new System.IO.StringWriter();
+            var renderer = new Markdig.Renderers.HtmlRenderer(writer);
+            _pipeline.Setup(renderer);
+            renderer.Render(document);
+            writer.Flush();
+            htmlContent = writer.ToString();
+        }
+        else
+        {
+            htmlContent = Markdown.ToHtml(markdown, _pipeline);
+        }
 
         // Restore Mermaid blocks AFTER Markdig processing
         for (int i = 0; i < mermaidBlocks.Count; i++)
@@ -2183,9 +2552,12 @@ public partial class MainWindow : Window
             File.WriteAllText(tempPath, html, new UTF8Encoding(true));
             _webView.Url = new Uri(tempPath);
 
-            // Force focus and visual update after navigation
+            // After navigation, manage focus appropriately
             await Task.Delay(100);
-            _webView.Focus();
+            if (_isEditMode)
+                _textEditor.Focus();
+            else
+                _webView.Focus();
         }
         catch (Exception ex)
         {

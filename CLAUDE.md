@@ -36,10 +36,12 @@ This is a single-window Avalonia UI desktop application for viewing and editing 
 - **MainWindow** (`MainWindow.axaml.cs`) - Contains all application logic in a single file:
   - Tab management (`TabState` class) - Each open file is a tab with its own file watcher
   - Split-view editor - AvaloniaEdit text editor (left) with live WebView preview (right), toggled via Ctrl+E
-  - Settings persistence (`AppSettings` class) - Dark mode preference and recent files stored in `%LocalAppData%/SimpleMarkdownViewer/settings.json`
-  - Markdown rendering - Uses Markdig with preprocessing for Mermaid diagrams and KaTeX math
+  - Settings persistence (`AppSettings` class) - Dark mode, preview line numbers, and recent files stored in `%LocalAppData%/SimpleMarkdownViewer/settings.json`
+  - Custom CSS support - Optional `custom-dark.css` / `custom-light.css` in settings folder, injected after built-in styles
+  - Markdown rendering - Uses Markdig with preprocessing for Mermaid diagrams and KaTeX math; optional source line numbers via AST walking
   - WebView integration - Renders HTML in WebView2 (Windows), WKWebView (macOS), or WebKitGTK (Linux)
-  - Context menus - Custom JS context menu in WebView preview; Avalonia context menu in editor with Format submenu
+  - Tab overflow - ScrollViewer with arrow buttons and dropdown picker for many open tabs
+  - Context menus - Custom JS context menu in WebView preview; Avalonia context menu in editor with Format submenu; tab right-click with Close/Close Others/Close to Right/Close All
 - **Program.cs** - Entry point with single-instance support via named mutex and named pipe IPC
 
 ### Rendering Pipeline
