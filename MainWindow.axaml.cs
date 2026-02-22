@@ -258,6 +258,7 @@ public partial class MainWindow : Window
         // Configure Markdig
         _pipeline = new MarkdownPipelineBuilder()
             .UseAdvancedExtensions()
+            .UseSmartyPants()
             .UseEmojiAndSmiley()
             .UseTaskLists()
             .UseDiagrams()
@@ -2184,7 +2185,7 @@ public partial class MainWindow : Window
             Spacing = 8
         };
         info.Children.Add(new TextBlock { Text = "Simple Markdown Viewer", FontSize = 20, FontWeight = Avalonia.Media.FontWeight.Bold, HorizontalAlignment = HorizontalAlignment.Center });
-        info.Children.Add(new TextBlock { Text = "Version 1.3.1", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
+        info.Children.Add(new TextBlock { Text = "Version 1.3.2", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "A lightweight markdown viewer and editor\nwith live preview, tabs, custom CSS, and dark mode.", TextAlignment = Avalonia.Media.TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "Built with Avalonia UI, WebView2, and Markdig", FontSize = 11, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
 

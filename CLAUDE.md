@@ -24,7 +24,10 @@ dotnet publish -c Release -r osx-arm64 --self-contained -o publish
 dotnet publish -c Release -r linux-x64 --self-contained -o publish
 
 # Build Windows installer (requires Inno Setup 6)
-build-installer.bat
+# NOTE: build-installer.bat does NOT work from bash. Run steps manually:
+rm -rf publish
+"C:/Program Files/dotnet/dotnet.exe" publish -c Release -r win-x64 --self-contained -o publish
+"G:/Program Files (x86)/Inno Setup 6/ISCC.exe" installer.iss
 ```
 
 ## Architecture
@@ -59,6 +62,19 @@ This is a single-window Avalonia UI desktop application for viewing and editing 
 - **WebView.Avalonia** - Cross-platform WebView wrapper
 - **Markdig** - Markdown parsing with advanced extensions
 - Client-side: highlight.js, Mermaid, KaTeX (loaded from CDN)
+
+## Version Bump Checklist
+
+All four locations must be updated together:
+- `SimpleMarkdownViewer.csproj` — Version, AssemblyVersion, FileVersion
+- `installer.iss` — MyAppVersion (#define)
+- `MainWindow.axaml.cs` — About dialog "Version X.Y.Z" text
+- `build-installer.bat` — echo line referencing installer filename
+
+## Project Info
+
+- Publisher: DAB Worx Inc. (https://dabworx.com)
+- Repo: https://github.com/KrunchMuffin/SimpleMarkdownViewer
 
 ## Platform Requirements
 
