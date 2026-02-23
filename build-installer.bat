@@ -58,6 +58,6 @@ echo ========================================
 echo BUILD COMPLETE!
 echo ========================================
 echo.
-echo Installer created: installer\SimpleMarkdownViewer-Setup-1.3.2.exe
+echo Installer created: installer\SimpleMarkdownViewer-Setup-1.3.3.exe
 echo.
 pause

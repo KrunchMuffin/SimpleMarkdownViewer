@@ -46,6 +46,8 @@ public partial class MainWindow : Window
         "SimpleMarkdownViewer");
 
     private static readonly string SettingsPath = Path.Combine(SettingsDir, "settings.json");
+
+    private static readonly string LibsDir = Path.Combine(AppContext.BaseDirectory, "Assets", "libs");
     
     private bool _isDarkMode = false;
     private bool _showPreviewLineNumbers = false;
@@ -538,6 +540,7 @@ public partial class MainWindow : Window
             _webViewReady = true;
             RenderHtml(GetWelcomePage());
         }
+
     }
 
     private void OnKeyDown(object? sender, KeyEventArgs e)
@@ -753,6 +756,12 @@ public partial class MainWindow : Window
         }
     }
 
+    private static string LibUrl(string relativePath)
+    {
+        var fullPath = Path.Combine(LibsDir, relativePath);
+        return new Uri(fullPath).AbsoluteUri;
+    }
+
     private string GetCustomCssTag()
     {
         var cssFile = _isDarkMode ? "custom-dark.css" : "custom-light.css";
@@ -787,16 +796,16 @@ public partial class MainWindow : Window
     <meta charset=""UTF-8"">
     <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
     
-    <script src=""https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js""></script>
-    <script src=""https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js""></script>
-    <link rel=""stylesheet"" href=""https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/{hljsTheme}.min.css"">
-    <script src=""https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js""></script>
-    <script src=""https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js""></script>
-    <script src=""https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/powershell.min.js""></script>
-    <script src=""https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/csharp.min.js""></script>
-    
-    <link rel=""stylesheet"" href=""https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"">
-    <script src=""https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js""></script>
+    <script src=""{LibUrl("mermaid.min.js")}""></script>
+    <script src=""{LibUrl("svg-pan-zoom.min.js")}""></script>
+    <link rel=""stylesheet"" href=""{LibUrl($"hljs/styles/{hljsTheme}.min.css")}"">
+    <script src=""{LibUrl("hljs/highlight.min.js")}""></script>
+    <script src=""{LibUrl("hljs/languages/sql.min.js")}""></script>
+    <script src=""{LibUrl("hljs/languages/powershell.min.js")}""></script>
+    <script src=""{LibUrl("hljs/languages/csharp.min.js")}""></script>
+
+    <link rel=""stylesheet"" href=""{LibUrl("katex/katex.min.css")}"">
+    <script src=""{LibUrl("katex/katex.min.js")}""></script>
     
     <style>
         * {{ box-sizing: border-box; }}
@@ -1783,6 +1792,7 @@ public partial class MainWindow : Window
 
             LoadCurrentTabIntoEditor();
             _textEditor.Focus();
+
         }
         else
         {
@@ -1798,15 +1808,18 @@ public partial class MainWindow : Window
             _editorSplitter.IsVisible = false;
             _editModeMenuItem.Header = "_Edit Mode";
             UpdateSaveMenuState();
-        }
 
-        // Update WebView context menu label
-        try
-        {
-            var label = _isEditMode ? "Exit Edit Mode" : "Edit";
-            _webView.ExecuteScriptAsync($"document.getElementById('ctxEdit').childNodes[0].textContent = '{label}';");
+            // Re-render preview so CachedHtml gets the non-edit-mode template
+            if (_selectedTabIndex >= 0 && _selectedTabIndex < _tabs.Count)
+            {
+                var tab = _tabs[_selectedTabIndex];
+                var content = tab.EditContent ?? "";
+                var htmlContent = ConvertMarkdownToHtml(content);
+                var template = GetTemplate();
+                tab.CachedHtml = template.Replace("{{CONTENT}}", htmlContent);
+                RenderHtml(tab.CachedHtml);
+            }
         }
-        catch { }
     }
 
     private void LoadCurrentTabIntoEditor()
@@ -1840,6 +1853,7 @@ public partial class MainWindow : Window
         _saveMenuItem.IsEnabled = true;
         _saveAsMenuItem.IsEnabled = true;
     }
+
 
     private void OnEditorTextChanged(object? sender, EventArgs e)
     {
@@ -2185,7 +2199,7 @@ public partial class MainWindow : Window
             Spacing = 8
         };
         info.Children.Add(new TextBlock { Text = "Simple Markdown Viewer", FontSize = 20, FontWeight = Avalonia.Media.FontWeight.Bold, HorizontalAlignment = HorizontalAlignment.Center });
-        info.Children.Add(new TextBlock { Text = "Version 1.3.2", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
+        info.Children.Add(new TextBlock { Text = "Version 1.3.3", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "A lightweight markdown viewer and editor\nwith live preview, tabs, custom CSS, and dark mode.", TextAlignment = Avalonia.Media.TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "Built with Avalonia UI, WebView2, and Markdig", FontSize = 11, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
 
@@ -2506,7 +2520,7 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
         if (_showPreviewLineNumbers)
         {
             var document = Markdown.Parse(markdown, _pipeline);
-            // Inject source line numbers as data attributes on all blocks
+            // Inject source line numbers as data attributes on all blocks (needed for line numbers and scroll sync)
             AddLineNumbers(document);
             using var writer = new System.IO.StringWriter();
             var renderer = new Markdig.Renderers.HtmlRenderer(writer);
@@ -2561,12 +2575,16 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
             File.WriteAllText(tempPath, html, new UTF8Encoding(true));
             _webView.Url = new Uri(tempPath);
 
-            // After navigation, manage focus appropriately
+            // After navigation, manage focus and sync context menu
             await Task.Delay(100);
+            try
+            {
+                var label = _isEditMode ? "Exit Edit Mode" : "Edit";
+                await _webView.ExecuteScriptAsync($"document.getElementById('ctxEdit').childNodes[0].textContent = '{label}';");
+            }
+            catch { }
             if (_isEditMode)
                 _textEditor.Focus();
-            else
-                _webView.Focus();
         }
         catch (Exception ex)
         {
