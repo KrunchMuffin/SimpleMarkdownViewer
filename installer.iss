@@ -2,7 +2,7 @@
 ; Download Inno Setup from: https://jrsoftware.org/isinfo.php
 
 #define MyAppName "Simple Markdown Viewer"
-#define MyAppVersion "1.3.4"
+#define MyAppVersion "1.4.0"
 #define MyAppPublisher "DAB Worx Inc."
 #define MyAppURL "https://github.com/KrunchMuffin/SimpleMarkdownViewer"
 #define MyAppExeName "SimpleMarkdownViewer.exe"
@@ -36,6 +36,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "fileassoc_common"; Description: "Common extensions (.md, .markdown)"; GroupDescription: "File associations:"
 Name: "fileassoc_extended"; Description: "Extended extensions (.mdown, .mkd, .mkdn, .mdwn, .mdtxt, .mdtext)"; GroupDescription: "File associations:"
 Name: "fileassoc_special"; Description: "Specialized extensions (.mdx, .rmd)"; GroupDescription: "File associations:"; Flags: unchecked
+Name: "fileassoc_mermaid"; Description: "Mermaid extensions (.mmd, .mermaid)"; GroupDescription: "File associations:"
 
 [Files]
 Source: "publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -49,7 +50,7 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 ; Register application with friendly name (always register capabilities for Open With)
 Root: HKLM; Subkey: "SOFTWARE\SimpleMarkdownViewer"; ValueType: string; ValueName: ""; ValueData: "{#MyAppName}"; Flags: uninsdeletekey
 Root: HKLM; Subkey: "SOFTWARE\SimpleMarkdownViewer\Capabilities"; ValueType: string; ValueName: "ApplicationName"; ValueData: "{#MyAppName}"
-Root: HKLM; Subkey: "SOFTWARE\SimpleMarkdownViewer\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "A lightweight markdown viewer"
+Root: HKLM; Subkey: "SOFTWARE\SimpleMarkdownViewer\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "A lightweight markdown and Mermaid viewer"
 Root: HKLM; Subkey: "SOFTWARE\RegisteredApplications"; ValueType: string; ValueName: "SimpleMarkdownViewer"; ValueData: "SOFTWARE\SimpleMarkdownViewer\Capabilities"; Flags: uninsdeletevalue
 
 ; Capabilities - Common extensions
@@ -68,17 +69,21 @@ Root: HKLM; Subkey: "SOFTWARE\SimpleMarkdownViewer\Capabilities\FileAssociations
 Root: HKLM; Subkey: "SOFTWARE\SimpleMarkdownViewer\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mdx"; ValueData: "SimpleMarkdownViewer.md"; Tasks: fileassoc_special
 Root: HKLM; Subkey: "SOFTWARE\SimpleMarkdownViewer\Capabilities\FileAssociations"; ValueType: string; ValueName: ".rmd"; ValueData: "SimpleMarkdownViewer.md"; Tasks: fileassoc_special
 
+; Capabilities - Mermaid extensions
+Root: HKLM; Subkey: "SOFTWARE\SimpleMarkdownViewer\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mmd"; ValueData: "SimpleMarkdownViewer.md"; Tasks: fileassoc_mermaid
+Root: HKLM; Subkey: "SOFTWARE\SimpleMarkdownViewer\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mermaid"; ValueData: "SimpleMarkdownViewer.md"; Tasks: fileassoc_mermaid
+
 ; App Paths for friendly name in Open With dialog
 Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\SimpleMarkdownViewer.exe"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName}"; Flags: uninsdeletekey
 Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\SimpleMarkdownViewer.exe"; ValueType: string; ValueName: "Path"; ValueData: "{app}"
 
 ; ProgID registration (needed if any file association is selected)
-Root: HKCR; Subkey: "SimpleMarkdownViewer.md"; ValueType: string; ValueName: ""; ValueData: "Markdown File"; Flags: uninsdeletekey; Tasks: fileassoc_common or fileassoc_extended or fileassoc_special
-Root: HKCR; Subkey: "SimpleMarkdownViewer.md"; ValueType: string; ValueName: "FriendlyTypeName"; ValueData: "{#MyAppName}"; Tasks: fileassoc_common or fileassoc_extended or fileassoc_special
-Root: HKCR; Subkey: "SimpleMarkdownViewer.md\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName},0"; Tasks: fileassoc_common or fileassoc_extended or fileassoc_special
-Root: HKCR; Subkey: "SimpleMarkdownViewer.md\shell"; ValueType: string; ValueName: ""; ValueData: "open"; Tasks: fileassoc_common or fileassoc_extended or fileassoc_special
-Root: HKCR; Subkey: "SimpleMarkdownViewer.md\shell\open"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "{#MyAppName}"; Tasks: fileassoc_common or fileassoc_extended or fileassoc_special
-Root: HKCR; Subkey: "SimpleMarkdownViewer.md\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Tasks: fileassoc_common or fileassoc_extended or fileassoc_special
+Root: HKCR; Subkey: "SimpleMarkdownViewer.md"; ValueType: string; ValueName: ""; ValueData: "Markdown or Mermaid File"; Flags: uninsdeletekey; Tasks: fileassoc_common or fileassoc_extended or fileassoc_special or fileassoc_mermaid
+Root: HKCR; Subkey: "SimpleMarkdownViewer.md"; ValueType: string; ValueName: "FriendlyTypeName"; ValueData: "{#MyAppName}"; Tasks: fileassoc_common or fileassoc_extended or fileassoc_special or fileassoc_mermaid
+Root: HKCR; Subkey: "SimpleMarkdownViewer.md\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName},0"; Tasks: fileassoc_common or fileassoc_extended or fileassoc_special or fileassoc_mermaid
+Root: HKCR; Subkey: "SimpleMarkdownViewer.md\shell"; ValueType: string; ValueName: ""; ValueData: "open"; Tasks: fileassoc_common or fileassoc_extended or fileassoc_special or fileassoc_mermaid
+Root: HKCR; Subkey: "SimpleMarkdownViewer.md\shell\open"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "{#MyAppName}"; Tasks: fileassoc_common or fileassoc_extended or fileassoc_special or fileassoc_mermaid
+Root: HKCR; Subkey: "SimpleMarkdownViewer.md\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Tasks: fileassoc_common or fileassoc_extended or fileassoc_special or fileassoc_mermaid
 
 ; Common extensions - default association
 Root: HKCR; Subkey: ".md"; ValueType: string; ValueName: ""; ValueData: "SimpleMarkdownViewer.md"; Flags: uninsdeletevalue; Tasks: fileassoc_common
@@ -96,6 +101,10 @@ Root: HKCR; Subkey: ".mdtext"; ValueType: string; ValueName: ""; ValueData: "Sim
 Root: HKCR; Subkey: ".mdx"; ValueType: string; ValueName: ""; ValueData: "SimpleMarkdownViewer.md"; Flags: uninsdeletevalue; Tasks: fileassoc_special
 Root: HKCR; Subkey: ".rmd"; ValueType: string; ValueName: ""; ValueData: "SimpleMarkdownViewer.md"; Flags: uninsdeletevalue; Tasks: fileassoc_special
 
+; Mermaid extensions - default association
+Root: HKCR; Subkey: ".mmd"; ValueType: string; ValueName: ""; ValueData: "SimpleMarkdownViewer.md"; Flags: uninsdeletevalue; Tasks: fileassoc_mermaid
+Root: HKCR; Subkey: ".mermaid"; ValueType: string; ValueName: ""; ValueData: "SimpleMarkdownViewer.md"; Flags: uninsdeletevalue; Tasks: fileassoc_mermaid
+
 ; OpenWithProgids - Common extensions
 Root: HKCR; Subkey: ".md\OpenWithProgids"; ValueType: string; ValueName: "SimpleMarkdownViewer.md"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassoc_common
 Root: HKCR; Subkey: ".markdown\OpenWithProgids"; ValueType: string; ValueName: "SimpleMarkdownViewer.md"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassoc_common
@@ -111,6 +120,10 @@ Root: HKCR; Subkey: ".mdtext\OpenWithProgids"; ValueType: string; ValueName: "Si
 ; OpenWithProgids - Specialized extensions
 Root: HKCR; Subkey: ".mdx\OpenWithProgids"; ValueType: string; ValueName: "SimpleMarkdownViewer.md"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassoc_special
 Root: HKCR; Subkey: ".rmd\OpenWithProgids"; ValueType: string; ValueName: "SimpleMarkdownViewer.md"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassoc_special
+
+; OpenWithProgids - Mermaid extensions
+Root: HKCR; Subkey: ".mmd\OpenWithProgids"; ValueType: string; ValueName: "SimpleMarkdownViewer.md"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassoc_mermaid
+Root: HKCR; Subkey: ".mermaid\OpenWithProgids"; ValueType: string; ValueName: "SimpleMarkdownViewer.md"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassoc_mermaid
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent

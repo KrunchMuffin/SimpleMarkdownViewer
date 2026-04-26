@@ -1,0 +1,9 @@
+flowchart LR
+    A[Open .mmd file] --> B{Simple Markdown Viewer}
+    B --> C[Wrap raw Mermaid source]
+    B --> D[Render live preview]
+    B --> E[Watch for file changes]
+    C --> F[Mermaid diagram]
+    D --> F
+    E --> F
+    F --> G[Edit, save, or print]

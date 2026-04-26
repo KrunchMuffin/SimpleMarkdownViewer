@@ -14,6 +14,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using AvaloniaEdit;
 using AvaloniaEdit.TextMate;
 using AvaloniaWebView;
@@ -58,6 +59,10 @@ public partial class MainWindow : Window
     
     private readonly List<string> _recentFiles = new();
     private const int MaxRecentFiles = 10;
+    private static readonly string[] MarkdownFilePatterns = { "*.md", "*.markdown", "*.mdown", "*.mkd", "*.mkdn", "*.mdwn", "*.mdtxt", "*.mdtext", "*.mdx", "*.rmd" };
+    private static readonly string[] MermaidFilePatterns = { "*.mmd", "*.mermaid" };
+    private static readonly string[] MarkdownExtensions = { ".md", ".markdown", ".mdown", ".mkd", ".mkdn", ".mdwn", ".mdtxt", ".mdtext", ".mdx", ".rmd" };
+    private static readonly string[] MermaidExtensions = { ".mmd", ".mermaid" };
     
     private readonly List<TabState> _tabs = new();
     private int _selectedTabIndex = -1;
@@ -152,8 +157,13 @@ public partial class MainWindow : Window
 
     private void AddToRecentFiles(string filePath)
     {
-        // Remove if already exists (will re-add at top)
-        _recentFiles.Remove(filePath);
+        var existingIndex = _recentFiles.FindIndex(path =>
+            string.Equals(path, filePath, StringComparison.OrdinalIgnoreCase));
+        if (existingIndex == 0)
+            return;
+
+        if (existingIndex > 0)
+            _recentFiles.RemoveAt(existingIndex);
         
         // Insert at beginning
         _recentFiles.Insert(0, filePath);
@@ -163,7 +173,7 @@ public partial class MainWindow : Window
             _recentFiles.RemoveAt(_recentFiles.Count - 1);
         
         SaveSettings();
-        UpdateRecentMenu();
+        Dispatcher.UIThread.Post(UpdateRecentMenu, DispatcherPriority.Background);
     }
 
     private void UpdateRecentMenu()
@@ -280,7 +290,6 @@ public partial class MainWindow : Window
         // Wire up WebView events
         _webView.WebViewCreated += OnWebViewCreated;
         _webView.NavigationStarting += OnNavigationStarting;
-        _webView.NavigationCompleted += OnNavigationCompleted;
 
         // Show welcome page after window loads
         this.Loaded += OnWindowLoaded;
@@ -637,14 +646,11 @@ public partial class MainWindow : Window
 #pragma warning restore CS0618
         if (files == null) return;
         
-        var mdExtensions = new[] { ".md", ".markdown", ".mdown", ".mkd" };
-        
         foreach (var file in files)
         {
             var path = file.Path.LocalPath;
-            var ext = Path.GetExtension(path).ToLowerInvariant();
             
-            if (mdExtensions.Contains(ext))
+            if (IsSupportedDocumentFile(path))
             {
                 await OpenFileInNewTab(path);
             }
@@ -654,7 +660,7 @@ public partial class MainWindow : Window
     private async void OnWebViewCreated(object? sender, WebViewCreatedEventArgs e)
     {
         _webViewReady = true;
-        _statusText.Text = "Ready - Open a markdown file (Ctrl+O)";
+        _statusText.Text = "Ready - Open a markdown or Mermaid file (Ctrl+O)";
 
         // Set WebView background color to match theme (fixes dark mode initial render)
         try
@@ -675,13 +681,6 @@ public partial class MainWindow : Window
             RenderHtml(GetWelcomePage());
         }
 
-        // Force re-render after short delay to fix WebView2 dark mode rendering issue
-        if (_isDarkMode)
-        {
-            await Task.Delay(50);
-            var cachedHtml = _tabs.Count > 0 && _selectedTabIndex >= 0 ? _tabs[_selectedTabIndex].CachedHtml : null;
-            RenderHtml(cachedHtml ?? GetWelcomePage());
-        }
     }
 
     private string GetWelcomePage()
@@ -699,9 +698,21 @@ public partial class MainWindow : Window
 <body><div class='welcome'>
     <h2>Simple Markdown Viewer</h2>
     <p>Press <kbd>Ctrl</kbd>+<kbd>O</kbd> to open a file</p>
-    <p>or drag and drop markdown files here</p>
+    <p>or drag and drop markdown or Mermaid files here</p>
 </div></body></html>";
     }
+
+    private static bool HasExtension(string filePath, IEnumerable<string> extensions)
+    {
+        var ext = Path.GetExtension(filePath);
+        return extensions.Contains(ext, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static bool IsMarkdownFile(string filePath) => HasExtension(filePath, MarkdownExtensions);
+
+    private static bool IsMermaidFile(string filePath) => HasExtension(filePath, MermaidExtensions);
+
+    private static bool IsSupportedDocumentFile(string filePath) => IsMarkdownFile(filePath) || IsMermaidFile(filePath);
 
     private void OnNavigationStarting(object? sender, WebViewCore.Events.WebViewUrlLoadingEventArg e)
     {
@@ -728,10 +739,7 @@ public partial class MainWindow : Window
             if (filePath.Contains("mdviewer_") && filePath.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
                 return;
             
-            var ext = Path.GetExtension(filePath).ToLowerInvariant();
-            var mdExtensions = new[] { ".md", ".markdown", ".mdown", ".mkd" };
-            
-            if (mdExtensions.Contains(ext) && File.Exists(filePath))
+            if (IsSupportedDocumentFile(filePath) && File.Exists(filePath))
             {
                 // Cancel the WebView navigation
                 e.Cancel = true;
@@ -739,18 +747,6 @@ public partial class MainWindow : Window
                 // Open in a new tab instead
                 _ = OpenFileInNewTab(filePath);
             }
-        }
-    }
-
-    private async void OnNavigationCompleted(object? sender, WebViewUrlLoadedEventArg e)
-    {
-        if (e.IsSuccess)
-        {
-            try
-            {
-                await _webView.ExecuteScriptAsync("if(typeof renderContent === 'function') renderContent();");
-            }
-            catch { }
         }
     }
 
@@ -904,6 +900,21 @@ public partial class MainWindow : Window
         .mermaid svg {{
             max-width: 100%;
             height: auto;
+        }}
+        .mermaid-error {{
+            cursor: default;
+            text-align: left;
+            border-color: #d73a49;
+        }}
+        .mermaid-error::after {{
+            display: none;
+        }}
+        .mermaid-error strong {{
+            color: #d73a49;
+        }}
+        .mermaid-error pre {{
+            margin-bottom: 0;
+            white-space: pre-wrap;
         }}
 
         /* Fullscreen mode for diagrams */
@@ -1154,26 +1165,55 @@ public partial class MainWindow : Window
         let isDragging = false;
         let dragStartX = 0, dragStartY = 0;
         let panStartX = 0, panStartY = 0;
+        let contentRendered = false;
+
+        function escapeHtml(value) {{
+            const div = document.createElement('div');
+            div.textContent = value || '';
+            return div.innerHTML;
+        }}
+
+        async function renderMermaidDiagrams() {{
+            const diagrams = Array.from(document.querySelectorAll('.mermaid:not(.mermaid-error):not([data-processed])'))
+                .filter(el => !el.querySelector('svg'));
+
+            for (const el of diagrams) {{
+                try {{
+                    await mermaid.run({{ nodes: [el] }});
+                }} catch (e) {{
+                    const message = (e && (e.message || e.str || e.toString())) || 'Unknown Mermaid error';
+                    console.error('Mermaid render error:', e);
+                    el.classList.add('mermaid-error');
+                    el.innerHTML = '<strong>Mermaid render error</strong><pre>' + escapeHtml(message) + '</pre>';
+                }}
+
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }}
+        }}
+
+        function attachMermaidFullscreenHandlers() {{
+            document.querySelectorAll('.mermaid:not(.mermaid-error)').forEach((el) => {{
+                if (el.dataset.fullscreenReady === 'true') return;
+                el.dataset.fullscreenReady = 'true';
+                el.addEventListener('click', (e) => {{
+                    if (!el.classList.contains('fullscreen')) {{
+                        openFullscreen(el);
+                    }}
+                }});
+            }});
+        }}
 
         function renderContent() {{
+            if (contentRendered) return;
+            contentRendered = true;
+
             mermaid.initialize({{
                 startOnLoad: false,
                 theme: '{mermaidTheme}',
                 securityLevel: 'loose'
             }});
 
-            try {{ mermaid.run({{ querySelector: '.mermaid' }}); }} catch (e) {{ console.error(e); }}
-
-            // Add click handlers to mermaid diagrams for fullscreen
-            setTimeout(() => {{
-                document.querySelectorAll('.mermaid').forEach((el) => {{
-                    el.addEventListener('click', (e) => {{
-                        if (!el.classList.contains('fullscreen')) {{
-                            openFullscreen(el);
-                        }}
-                    }});
-                }});
-            }}, 500);
+            renderMermaidDiagrams().then(attachMermaidFullscreenHandlers);
 
             document.querySelectorAll('pre code').forEach((block) => {{
                 if (!block.closest('.mermaid')) hljs.highlightElement(block);
@@ -1412,11 +1452,13 @@ public partial class MainWindow : Window
         {
             var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
-                Title = "Open Markdown File",
+                Title = "Open Markdown or Mermaid File",
                 AllowMultiple = true,
                 FileTypeFilter = new[]
                 {
-                    new FilePickerFileType("Markdown Files") { Patterns = new[] { "*.md", "*.markdown", "*.mdown", "*.mkd" } },
+                    new FilePickerFileType("Markdown and Mermaid Files") { Patterns = MarkdownFilePatterns.Concat(MermaidFilePatterns).ToArray() },
+                    new FilePickerFileType("Markdown Files") { Patterns = MarkdownFilePatterns },
+                    new FilePickerFileType("Mermaid Files") { Patterns = MermaidFilePatterns },
                     new FilePickerFileType("All Files") { Patterns = new[] { "*.*" } }
                 }
             });
@@ -1711,7 +1753,7 @@ public partial class MainWindow : Window
         if (_tabs.Count == 0)
         {
             _selectedTabIndex = -1;
-            _statusText.Text = "Ready - Open a markdown file (Ctrl+O)";
+            _statusText.Text = "Ready - Open a markdown or Mermaid file (Ctrl+O)";
             Title = "Simple Markdown Viewer";
             RenderHtml(GetWelcomePage());
 
@@ -1807,9 +1849,7 @@ public partial class MainWindow : Window
             {
                 var tab = _tabs[_selectedTabIndex];
                 var content = tab.EditContent ?? "";
-                var htmlContent = ConvertMarkdownToHtml(content);
-                var template = GetTemplate();
-                tab.CachedHtml = template.Replace("{{CONTENT}}", htmlContent);
+                tab.CachedHtml = BuildHtmlForTab(tab, content);
                 RenderHtml(tab.CachedHtml);
             }
         }
@@ -1878,9 +1918,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var htmlContent = ConvertMarkdownToHtml(tab.EditContent);
-            var template = GetTemplate();
-            tab.CachedHtml = template.Replace("{{CONTENT}}", htmlContent);
+            tab.CachedHtml = BuildHtmlForTab(tab, tab.EditContent);
             RenderHtml(tab.CachedHtml);
         }
         catch (Exception ex)
@@ -1955,11 +1993,12 @@ public partial class MainWindow : Window
         {
             var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
             {
-                Title = "Save Markdown File",
-                DefaultExtension = ".md",
+                Title = "Save Markdown or Mermaid File",
+                DefaultExtension = GetDefaultSaveExtension(tab),
                 FileTypeChoices = new[]
                 {
-                    new FilePickerFileType("Markdown Files") { Patterns = new[] { "*.md", "*.markdown" } },
+                    new FilePickerFileType("Markdown Files") { Patterns = MarkdownFilePatterns },
+                    new FilePickerFileType("Mermaid Files") { Patterns = MermaidFilePatterns },
                     new FilePickerFileType("All Files") { Patterns = new[] { "*.*" } }
                 },
                 SuggestedFileName = tab.IsNewFile ? "untitled.md" : tab.FileName
@@ -1990,6 +2029,14 @@ public partial class MainWindow : Window
             _statusText.Text = $"Save failed: {ex.Message}";
             return false;
         }
+    }
+
+    private static string GetDefaultSaveExtension(TabState tab)
+    {
+        if (!tab.IsNewFile && IsMermaidFile(tab.FilePath))
+            return Path.GetExtension(tab.FilePath);
+
+        return ".md";
     }
 
     private async Task<bool> SaveTabToFile(TabState tab, string filePath)
@@ -2223,8 +2270,8 @@ public partial class MainWindow : Window
             Spacing = 8
         };
         info.Children.Add(new TextBlock { Text = "Simple Markdown Viewer", FontSize = 20, FontWeight = Avalonia.Media.FontWeight.Bold, HorizontalAlignment = HorizontalAlignment.Center });
-        info.Children.Add(new TextBlock { Text = "Version 1.3.4", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
-        info.Children.Add(new TextBlock { Text = "A lightweight markdown viewer and editor\nwith live preview, tabs, custom CSS, and dark mode.", TextAlignment = Avalonia.Media.TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center });
+        info.Children.Add(new TextBlock { Text = "Version 1.4.0", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
+        info.Children.Add(new TextBlock { Text = "A lightweight markdown and Mermaid viewer/editor\nwith live preview, tabs, custom CSS, and dark mode.", TextAlignment = Avalonia.Media.TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "Built with Avalonia UI, WebView2, and Markdig", FontSize = 11, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
 
         var dabWorxLink = new TextBlock { Text = "An open source project by DAB Worx Inc.", FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center, Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#0066cc")), Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand), TextDecorations = Avalonia.Media.TextDecorations.Underline };
@@ -2497,19 +2544,129 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
         }
     }
 
+    private static string ExtractMermaidFences(string markdown, List<string> mermaidBlocks)
+    {
+        var result = new StringBuilder(markdown.Length);
+        var position = 0;
+
+        while (position < markdown.Length)
+        {
+            var lineStart = position;
+            var lineEnd = FindLineEnd(markdown, lineStart);
+            var nextLineStart = FindNextLineStart(markdown, lineEnd);
+            var line = markdown.Substring(lineStart, lineEnd - lineStart);
+
+            if (TryGetFenceLine(line, out var fenceChar, out var fenceLength, out var info)
+                && info.StartsWith("mermaid", StringComparison.OrdinalIgnoreCase))
+            {
+                var codeStart = nextLineStart;
+                var scanPosition = nextLineStart;
+
+                while (scanPosition < markdown.Length)
+                {
+                    var closingLineStart = scanPosition;
+                    var closingLineEnd = FindLineEnd(markdown, closingLineStart);
+                    var closingNextLineStart = FindNextLineStart(markdown, closingLineEnd);
+                    var closingLine = markdown.Substring(closingLineStart, closingLineEnd - closingLineStart);
+
+                    if (IsClosingFenceLine(closingLine, fenceChar, fenceLength))
+                    {
+                        mermaidBlocks.Add(markdown.Substring(codeStart, closingLineStart - codeStart));
+                        result.Append($"<!--MERMAID_PLACEHOLDER_{mermaidBlocks.Count - 1}-->");
+                        position = closingNextLineStart;
+                        goto ContinueScanning;
+                    }
+
+                    scanPosition = closingNextLineStart;
+                }
+            }
+
+            result.Append(markdown, lineStart, nextLineStart - lineStart);
+            position = nextLineStart;
+
+        ContinueScanning:;
+        }
+
+        return result.ToString();
+    }
+
+    private static int FindLineEnd(string text, int start)
+    {
+        var index = start;
+        while (index < text.Length && text[index] != '\r' && text[index] != '\n')
+            index++;
+        return index;
+    }
+
+    private static int FindNextLineStart(string text, int lineEnd)
+    {
+        if (lineEnd >= text.Length)
+            return text.Length;
+
+        if (text[lineEnd] == '\r' && lineEnd + 1 < text.Length && text[lineEnd + 1] == '\n')
+            return lineEnd + 2;
+
+        return lineEnd + 1;
+    }
+
+    private static bool TryGetFenceLine(string line, out char fenceChar, out int fenceLength, out string info)
+    {
+        fenceChar = '\0';
+        fenceLength = 0;
+        info = "";
+
+        var index = 0;
+        while (index < line.Length && (line[index] == ' ' || line[index] == '\t'))
+            index++;
+
+        if (index >= line.Length || (line[index] != '`' && line[index] != '~'))
+            return false;
+
+        fenceChar = line[index];
+        while (index < line.Length && line[index] == fenceChar)
+        {
+            fenceLength++;
+            index++;
+        }
+
+        if (fenceLength < 3)
+            return false;
+
+        info = line.Substring(index).TrimStart();
+        return true;
+    }
+
+    private static bool IsClosingFenceLine(string line, char fenceChar, int openingFenceLength)
+    {
+        var index = 0;
+        while (index < line.Length && (line[index] == ' ' || line[index] == '\t'))
+            index++;
+
+        var fenceLength = 0;
+        while (index < line.Length && line[index] == fenceChar)
+        {
+            fenceLength++;
+            index++;
+        }
+
+        if (fenceLength < openingFenceLength)
+            return false;
+
+        while (index < line.Length)
+        {
+            if (line[index] != ' ' && line[index] != '\t')
+                return false;
+            index++;
+        }
+
+        return true;
+    }
+
     private string ConvertMarkdownToHtml(string markdown)
     {
         // Extract Mermaid blocks BEFORE Markdig processing to protect from typography transforms
         var mermaidBlocks = new List<string>();
-        markdown = System.Text.RegularExpressions.Regex.Replace(
-            markdown,
-            @"```mermaid\s*\n([\s\S]*?)```",
-            m => {
-                mermaidBlocks.Add(m.Groups[1].Value);
-                return $"<!--MERMAID_PLACEHOLDER_{mermaidBlocks.Count - 1}-->";
-            },
-            System.Text.RegularExpressions.RegexOptions.Multiline
-        );
+        markdown = ExtractMermaidFences(markdown, mermaidBlocks);
 
         markdown = PreprocessMarkdown(markdown);
 
@@ -2550,6 +2707,28 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
         return template.Replace("{{CONTENT}}", htmlContent);
     }
 
+    private static string WrapMermaidSource(string source)
+    {
+        return $"```mermaid\n{source.TrimEnd('\r', '\n')}\n```";
+    }
+
+    private static bool LooksLikeMarkdownDocument(string content)
+    {
+        var trimmed = content.TrimStart('\uFEFF', ' ', '\t', '\r', '\n');
+        return trimmed.StartsWith("#", StringComparison.Ordinal)
+            || trimmed.StartsWith("```", StringComparison.Ordinal)
+            || content.Contains("```mermaid", StringComparison.OrdinalIgnoreCase)
+            || content.Contains("~~~mermaid", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string BuildHtmlForTab(TabState tab, string content)
+    {
+        var markdown = IsMermaidFile(tab.FilePath) && !LooksLikeMarkdownDocument(content)
+            ? WrapMermaidSource(content)
+            : content;
+        return BuildHtmlFromMarkdown(markdown);
+    }
+
     private async Task GenerateHtml(TabState tab, bool forceDiskReload = false)
     {
         try
@@ -2559,7 +2738,7 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
                 ? tab.EditContent
                 : await File.ReadAllTextAsync(tab.FilePath, Encoding.UTF8);
 
-            tab.CachedHtml = BuildHtmlFromMarkdown(markdown);
+            tab.CachedHtml = BuildHtmlForTab(tab, markdown);
         }
         catch (Exception ex)
         {
@@ -2601,7 +2780,7 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
                 _textEditor.TextChanged += OnEditorTextChanged;
             }
 
-            tab.CachedHtml = BuildHtmlFromMarkdown(content);
+            tab.CachedHtml = BuildHtmlForTab(tab, content);
             if (_tabs.IndexOf(tab) == _selectedTabIndex)
                 RenderHtml(tab.CachedHtml);
 
@@ -2627,14 +2806,18 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
         {
             var tempPath = GetCurrentRenderPath();
             File.WriteAllText(tempPath, html, new UTF8Encoding(true));
+            var renderVersion = Interlocked.Increment(ref _renderVersion);
             var uriBuilder = new UriBuilder(new Uri(tempPath))
             {
-                Query = $"v={Interlocked.Increment(ref _renderVersion)}"
+                Query = $"v={renderVersion}"
             };
             _webView.Url = uriBuilder.Uri;
 
             // After navigation, manage focus and sync context menu
             await Task.Delay(100);
+            if (renderVersion != _renderVersion)
+                return;
+
             try
             {
                 var label = _isEditMode ? "Exit Edit Mode" : "Edit";
