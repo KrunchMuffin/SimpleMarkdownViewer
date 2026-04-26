@@ -1,6 +1,6 @@
 # Simple Markdown Viewer
 
-A lightweight, fast markdown viewer built with Avalonia UI.
+A lightweight, fast markdown and Mermaid viewer built with Avalonia UI.
 
 ![Screenshot](screenshot.png)
 
@@ -13,16 +13,16 @@ A lightweight, fast markdown viewer built with Avalonia UI.
 ## Features
 
 - **Live Reload** - Automatically refreshes when the file changes
-- **Tabs** - Open multiple markdown files at once
+- **Tabs** - Open multiple markdown and Mermaid files at once
 - **Dark/Light Mode** - Toggle with persisted preference
 - **Syntax Highlighting** - Code blocks with highlight.js
-- **Mermaid Diagrams** - Flowcharts, sequence diagrams, etc.
+- **Mermaid Diagrams** - Flowcharts, sequence diagrams, and standalone `.mmd` / `.mermaid` files
 - **KaTeX Math** - LaTeX math rendering
-- **Drag & Drop** - Drop markdown files onto the window
+- **Drag & Drop** - Drop markdown or Mermaid files onto the window
 - **Clipboard Paste** - Create a preview from clipboard content (Ctrl+Shift+V)
 - **Recent Files** - Quick access to recently opened files
 - **Print/PDF** - Print or save as PDF via system dialog
-- **File Association** - Register as default .md viewer (Windows)
+- **File Association** - Register as default `.md`, `.mmd`, or `.mermaid` viewer (Windows)
 
 ## Keyboard Shortcuts
 
@@ -94,10 +94,10 @@ To build the Windows installer yourself:
 
 ## File Association (Windows)
 
-To register as the default handler for `.md` files:
+To register as the default handler for `.md`, `.mmd`, or `.mermaid` files:
 
 1. Run `register-file-association.reg` as administrator
-2. Right-click any `.md` file → Open with → Choose another app → Select SimpleMarkdownViewer
+2. Right-click any supported file → Open with → Choose another app → Select SimpleMarkdownViewer
 
 To unregister, run `unregister-file-association.reg`.
 
