@@ -53,6 +53,8 @@ public partial class MainWindow : Window
     private bool _showPreviewLineNumbers = false;
     private bool _webViewReady = false;
     private string? _pendingHtml = null;
+    private string? _welcomeTempHtmlPath;
+    private int _renderVersion;
     
     private readonly List<string> _recentFiles = new();
     private const int MaxRecentFiles = 10;
@@ -718,13 +720,9 @@ public partial class MainWindow : Window
         }
 
         // Check if this is a file being dragged onto WebView
-        if (url.StartsWith("file:///", StringComparison.OrdinalIgnoreCase))
+        if (Uri.TryCreate(url, UriKind.Absolute, out var fileUri) && fileUri.IsFile)
         {
-            // Extract the file path
-            var filePath = url.Substring(8).Replace('/', '\\');
-            
-            // URL decode
-            filePath = Uri.UnescapeDataString(filePath);
+            var filePath = fileUri.LocalPath;
             
             // Skip our own temp HTML files
             if (filePath.Contains("mdviewer_") && filePath.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
@@ -1544,24 +1542,24 @@ public partial class MainWindow : Window
             if (idx >= 0) SelectTab(idx);
         };
 
-        closeBtn.Click += (s, e) =>
+        closeBtn.Click += async (s, e) =>
         {
             e.Handled = true;
-            CloseTab(tab);
+            await CloseTab(tab);
         };
 
         // Right-click context menu
         var ctxClose = new MenuItem { Header = "Close" };
-        ctxClose.Click += (s, e) => CloseTab(tab);
+        ctxClose.Click += async (s, e) => await CloseTab(tab);
 
         var ctxCloseOthers = new MenuItem { Header = "Close Others" };
-        ctxCloseOthers.Click += (s, e) => CloseOtherTabs(tab);
+        ctxCloseOthers.Click += async (s, e) => await CloseOtherTabs(tab);
 
         var ctxCloseRight = new MenuItem { Header = "Close to the Right" };
-        ctxCloseRight.Click += (s, e) => CloseTabsToTheRight(tab);
+        ctxCloseRight.Click += async (s, e) => await CloseTabsToTheRight(tab);
 
         var ctxCloseAll = new MenuItem { Header = "Close All" };
-        ctxCloseAll.Click += (s, e) => CloseAllTabs();
+        ctxCloseAll.Click += async (s, e) => await CloseAllTabs();
 
         button.ContextMenu = new ContextMenu
         {
@@ -1675,10 +1673,10 @@ public partial class MainWindow : Window
         ScrollSelectedTabIntoView();
     }
 
-    private async void CloseTab(TabState tab)
+    private async Task<bool> CloseTab(TabState tab)
     {
         var index = _tabs.IndexOf(tab);
-        if (index < 0) return;
+        if (index < 0) return true;
 
         // Check for unsaved changes
         if (tab.IsModified)
@@ -1686,33 +1684,17 @@ public partial class MainWindow : Window
             var result = await ShowUnsavedChangesDialog(tab.FileName);
             if (result == "Save")
             {
-                if (tab.IsNewFile || string.IsNullOrEmpty(tab.FilePath))
-                {
-                    // Need Save As for new files
-                    var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-                    {
-                        Title = "Save Markdown File",
-                        DefaultExtension = ".md",
-                        FileTypeChoices = new[]
-                        {
-                            new FilePickerFileType("Markdown Files") { Patterns = new[] { "*.md", "*.markdown" } },
-                            new FilePickerFileType("All Files") { Patterns = new[] { "*.*" } }
-                        },
-                        SuggestedFileName = "untitled.md"
-                    });
-                    if (file == null) return; // User cancelled
-                    await SaveTabToFile(tab, file.Path.LocalPath);
-                }
-                else
-                {
-                    await SaveTabToFile(tab, tab.FilePath);
-                }
+                var saved = await SaveTab(tab);
+                if (!saved) return false;
             }
             else if (result == "Cancel")
             {
-                return;
+                return false;
             }
         }
+
+        index = _tabs.IndexOf(tab);
+        if (index < 0) return true;
 
         // Clean up
         tab.Watcher?.Dispose();
@@ -1743,36 +1725,47 @@ public partial class MainWindow : Window
         {
             SelectTab(Math.Min(index, _tabs.Count - 1));
         }
+
+        return true;
     }
 
-    private void CloseOtherTabs(TabState keepTab)
+    private async Task CloseOtherTabs(TabState keepTab)
     {
         var toClose = _tabs.Where(t => t != keepTab).ToList();
         foreach (var t in toClose)
-            CloseTab(t);
+        {
+            if (!await CloseTab(t))
+                break;
+        }
     }
 
-    private void CloseTabsToTheRight(TabState tab)
+    private async Task CloseTabsToTheRight(TabState tab)
     {
         var idx = _tabs.IndexOf(tab);
         if (idx < 0) return;
         var toClose = _tabs.Skip(idx + 1).ToList();
         foreach (var t in toClose)
-            CloseTab(t);
+        {
+            if (!await CloseTab(t))
+                break;
+        }
     }
 
-    private void CloseAllTabs()
+    private async Task CloseAllTabs()
     {
         var toClose = _tabs.ToList();
         foreach (var t in toClose)
-            CloseTab(t);
+        {
+            if (!await CloseTab(t))
+                break;
+        }
     }
 
-    private void OnCloseTabClick(object? sender, RoutedEventArgs e)
+    private async void OnCloseTabClick(object? sender, RoutedEventArgs e)
     {
         if (_selectedTabIndex >= 0 && _selectedTabIndex < _tabs.Count)
         {
-            CloseTab(_tabs[_selectedTabIndex]);
+            await CloseTab(_tabs[_selectedTabIndex]);
         }
     }
 
@@ -1927,7 +1920,7 @@ public partial class MainWindow : Window
 
         if (tab.IsNewFile || string.IsNullOrEmpty(tab.FilePath))
         {
-            OnSaveAsClick(sender, e);
+            await SaveTabAsFile(tab);
             return;
         }
 
@@ -1945,6 +1938,19 @@ public partial class MainWindow : Window
             return;
         }
 
+        await SaveTabAsFile(tab);
+    }
+
+    private async Task<bool> SaveTab(TabState tab)
+    {
+        if (tab.IsNewFile || string.IsNullOrEmpty(tab.FilePath))
+            return await SaveTabAsFile(tab);
+
+        return await SaveTabToFile(tab, tab.FilePath);
+    }
+
+    private async Task<bool> SaveTabAsFile(TabState tab)
+    {
         try
         {
             var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
@@ -1959,36 +1965,43 @@ public partial class MainWindow : Window
                 SuggestedFileName = tab.IsNewFile ? "untitled.md" : tab.FileName
             });
 
-            if (file != null)
-            {
-                var newPath = file.Path.LocalPath;
-                await SaveTabToFile(tab, newPath);
+            if (file == null)
+                return false;
 
-                tab.FilePath = newPath;
-                tab.IsNewFile = false;
-                tab.DisplayName = null;
+            var newPath = file.Path.LocalPath;
+            if (!await SaveTabToFile(tab, newPath))
+                return false;
 
-                SetupFileWatcher(tab);
-                UpdateTabTitle(tab);
-                Title = $"Simple Markdown Viewer - {tab.FileName}";
-                _statusText.Text = tab.FilePath;
+            tab.FilePath = newPath;
+            tab.IsNewFile = false;
+            tab.DisplayName = null;
+            tab.HasLoadedEditor = true;
 
-                AddToRecentFiles(newPath);
-            }
+            SetupFileWatcher(tab);
+            UpdateTabTitle(tab);
+            Title = $"Simple Markdown Viewer - {tab.FileName}";
+            _statusText.Text = tab.FilePath;
+
+            AddToRecentFiles(newPath);
+            return true;
         }
         catch (Exception ex)
         {
             _statusText.Text = $"Save failed: {ex.Message}";
+            return false;
         }
     }
 
-    private async Task SaveTabToFile(TabState tab, string filePath)
+    private async Task<bool> SaveTabToFile(TabState tab, string filePath)
     {
+        var watcher = tab.Watcher;
+        var reenableWatcher = watcher?.EnableRaisingEvents == true;
+
         try
         {
             // Temporarily disable file watcher to avoid re-render loop
-            if (tab.Watcher != null)
-                tab.Watcher.EnableRaisingEvents = false;
+            if (reenableWatcher && watcher != null)
+                watcher.EnableRaisingEvents = false;
 
             await File.WriteAllTextAsync(filePath, tab.EditContent, new UTF8Encoding(false));
 
@@ -1998,16 +2011,24 @@ public partial class MainWindow : Window
 
             _statusText.Text = $"Saved: {filePath}";
 
-            // Re-enable file watcher after filesystem settles
-            if (tab.Watcher != null)
-            {
-                await Task.Delay(200);
-                tab.Watcher.EnableRaisingEvents = true;
-            }
+            return true;
         }
         catch (Exception ex)
         {
             _statusText.Text = $"Save failed: {ex.Message}";
+            return false;
+        }
+        finally
+        {
+            if (reenableWatcher && watcher != null)
+            {
+                try
+                {
+                    await Task.Delay(200);
+                    watcher.EnableRaisingEvents = true;
+                }
+                catch { }
+            }
         }
     }
 
@@ -2147,14 +2168,17 @@ public partial class MainWindow : Window
         if (_selectedTabIndex >= 0 && _selectedTabIndex < _tabs.Count)
         {
             var tab = _tabs[_selectedTabIndex];
-            if (_isEditMode)
+            if (!tab.IsNewFile && (_isEditMode || tab.IsModified))
             {
-                // In edit mode, re-render from editor content
+                await ReloadTabFromDisk(tab);
+            }
+            else if (_isEditMode)
+            {
                 UpdatePreviewFromEditor(tab);
             }
             else if (!tab.IsNewFile)
             {
-                await GenerateHtml(tab);
+                await GenerateHtml(tab, forceDiskReload: true);
                 if (tab.CachedHtml != null)
                     RenderHtml(tab.CachedHtml);
             }
@@ -2199,7 +2223,7 @@ public partial class MainWindow : Window
             Spacing = 8
         };
         info.Children.Add(new TextBlock { Text = "Simple Markdown Viewer", FontSize = 20, FontWeight = Avalonia.Media.FontWeight.Bold, HorizontalAlignment = HorizontalAlignment.Center });
-        info.Children.Add(new TextBlock { Text = "Version 1.3.3", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
+        info.Children.Add(new TextBlock { Text = "Version 1.3.4", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "A lightweight markdown viewer and editor\nwith live preview, tabs, custom CSS, and dark mode.", TextAlignment = Avalonia.Media.TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "Built with Avalonia UI, WebView2, and Markdig", FontSize = 11, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
 
@@ -2236,17 +2260,7 @@ public partial class MainWindow : Window
         // Regenerate all tabs with new theme
         foreach (var tab in _tabs)
         {
-            if (tab.IsNewFile && _isEditMode)
-            {
-                // New files generate HTML from editor content, not from disk
-                var htmlContent = ConvertMarkdownToHtml(tab.EditContent);
-                var template = GetTemplate();
-                tab.CachedHtml = template.Replace("{{CONTENT}}", htmlContent);
-            }
-            else if (!tab.IsNewFile)
-            {
-                await GenerateHtml(tab);
-            }
+            await GenerateHtml(tab);
         }
 
         // Update tab button colors and text
@@ -2288,16 +2302,7 @@ public partial class MainWindow : Window
         // Regenerate all tabs with updated template
         foreach (var tab in _tabs)
         {
-            if (tab.IsNewFile && _isEditMode)
-            {
-                var htmlContent = ConvertMarkdownToHtml(tab.EditContent);
-                var template = GetTemplate();
-                tab.CachedHtml = template.Replace("{{CONTENT}}", htmlContent);
-            }
-            else if (!tab.IsNewFile)
-            {
-                await GenerateHtml(tab);
-            }
+            await GenerateHtml(tab);
         }
 
         // Re-render current tab
@@ -2445,14 +2450,14 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
             await Task.Delay(100);
             await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
             {
-                if (tab.IsModified && _isEditMode)
+                if (tab.IsModified)
                 {
                     // File changed externally while user has unsaved edits -- don't overwrite
                     _statusText.Text = $"Warning: {tab.FileName} changed on disk. Save to overwrite or Refresh (F5) to reload.";
                     return;
                 }
 
-                await GenerateHtml(tab);
+                await GenerateHtml(tab, forceDiskReload: true);
 
                 // Also update the editor content if in edit mode
                 if (_isEditMode && File.Exists(tab.FilePath))
@@ -2506,15 +2511,7 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
             System.Text.RegularExpressions.RegexOptions.Multiline
         );
 
-        // Ensure tables have a blank line before them (for Markdig compatibility)
-        markdown = System.Text.RegularExpressions.Regex.Replace(
-            markdown,
-            @"(\n[^\n\|]+)\n(\|[^\n]+\|)",
-            "$1\n\n$2",
-            System.Text.RegularExpressions.RegexOptions.Multiline
-        );
-
-        markdown = PreprocessMath(markdown);
+        markdown = PreprocessMarkdown(markdown);
 
         string htmlContent;
         if (_showPreviewLineNumbers)
@@ -2539,25 +2536,82 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
         {
             htmlContent = htmlContent.Replace(
                 $"<!--MERMAID_PLACEHOLDER_{i}-->",
-                $"<div class=\"mermaid\">\n{mermaidBlocks[i]}</div>"
+                $"<div class=\"mermaid\">\n{System.Net.WebUtility.HtmlEncode(mermaidBlocks[i])}</div>"
             );
         }
 
         return htmlContent;
     }
 
-    private async Task GenerateHtml(TabState tab)
+    private string BuildHtmlFromMarkdown(string markdown)
+    {
+        var htmlContent = ConvertMarkdownToHtml(markdown);
+        var template = GetTemplate();
+        return template.Replace("{{CONTENT}}", htmlContent);
+    }
+
+    private async Task GenerateHtml(TabState tab, bool forceDiskReload = false)
     {
         try
         {
-            var markdown = await File.ReadAllTextAsync(tab.FilePath, Encoding.UTF8);
-            var htmlContent = ConvertMarkdownToHtml(markdown);
-            var template = GetTemplate();
-            tab.CachedHtml = template.Replace("{{CONTENT}}", htmlContent);
+            var renderFromEditor = !forceDiskReload && (tab.IsNewFile || tab.HasLoadedEditor || tab.IsModified);
+            var markdown = renderFromEditor
+                ? tab.EditContent
+                : await File.ReadAllTextAsync(tab.FilePath, Encoding.UTF8);
+
+            tab.CachedHtml = BuildHtmlFromMarkdown(markdown);
         }
         catch (Exception ex)
         {
-            tab.CachedHtml = $"<html><head><meta charset=\"UTF-8\"></head><body><h1>Error</h1><p>{ex.Message}</p></body></html>";
+            tab.CachedHtml = $"<html><head><meta charset=\"UTF-8\"></head><body><h1>Error</h1><p>{System.Net.WebUtility.HtmlEncode(ex.Message)}</p></body></html>";
+        }
+    }
+
+    private async Task<bool> ReloadTabFromDisk(TabState tab)
+    {
+        if (tab.IsNewFile || string.IsNullOrEmpty(tab.FilePath) || !File.Exists(tab.FilePath))
+        {
+            UpdatePreviewFromEditor(tab);
+            return true;
+        }
+
+        if (tab.IsModified)
+        {
+            var result = await ShowUnsavedChangesDialog(tab.FileName);
+            if (result == "Cancel")
+                return false;
+
+            if (result == "Save" && !await SaveTab(tab))
+                return false;
+        }
+
+        try
+        {
+            var content = await File.ReadAllTextAsync(tab.FilePath, Encoding.UTF8);
+            tab.OriginalContent = content;
+            tab.EditContent = content;
+            tab.HasLoadedEditor = true;
+            tab.IsModified = false;
+            UpdateTabTitle(tab);
+
+            if (_isEditMode && _tabs.IndexOf(tab) == _selectedTabIndex)
+            {
+                _textEditor.TextChanged -= OnEditorTextChanged;
+                _textEditor.Text = content;
+                _textEditor.TextChanged += OnEditorTextChanged;
+            }
+
+            tab.CachedHtml = BuildHtmlFromMarkdown(content);
+            if (_tabs.IndexOf(tab) == _selectedTabIndex)
+                RenderHtml(tab.CachedHtml);
+
+            _statusText.Text = $"Reloaded: {tab.FilePath}";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _statusText.Text = $"Refresh failed: {ex.Message}";
+            return false;
         }
     }
 
@@ -2571,9 +2625,13 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
 
         try
         {
-            var tempPath = Path.Combine(Path.GetTempPath(), $"mdviewer_current_{Guid.NewGuid():N}.html");
+            var tempPath = GetCurrentRenderPath();
             File.WriteAllText(tempPath, html, new UTF8Encoding(true));
-            _webView.Url = new Uri(tempPath);
+            var uriBuilder = new UriBuilder(new Uri(tempPath))
+            {
+                Query = $"v={Interlocked.Increment(ref _renderVersion)}"
+            };
+            _webView.Url = uriBuilder.Uri;
 
             // After navigation, manage focus and sync context menu
             await Task.Delay(100);
@@ -2592,30 +2650,83 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
         }
     }
 
-
-    private string PreprocessMath(string markdown)
+    private string GetCurrentRenderPath()
     {
-        // Process display math first ($...$)
+        if (_selectedTabIndex >= 0 && _selectedTabIndex < _tabs.Count)
+            return _tabs[_selectedTabIndex].TempHtmlPath;
+
+        _welcomeTempHtmlPath ??= Path.Combine(Path.GetTempPath(), $"mdviewer_welcome_{Guid.NewGuid():N}.html");
+        return _welcomeTempHtmlPath;
+    }
+
+
+    private string PreprocessMarkdown(string markdown)
+    {
+        var fencedCodeRegex = new System.Text.RegularExpressions.Regex(
+            @"(?ms)^[ \t]*(```|~~~)[^\r\n]*(?:\r?\n.*?)*?^[ \t]*\1[ \t]*$",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+
+        var result = new StringBuilder();
+        var lastIndex = 0;
+
+        foreach (System.Text.RegularExpressions.Match match in fencedCodeRegex.Matches(markdown))
+        {
+            result.Append(PreprocessMarkdownSegment(markdown.Substring(lastIndex, match.Index - lastIndex)));
+            result.Append(match.Value);
+            lastIndex = match.Index + match.Length;
+        }
+
+        result.Append(PreprocessMarkdownSegment(markdown.Substring(lastIndex)));
+        return result.ToString();
+    }
+
+    private string PreprocessMarkdownSegment(string markdown)
+    {
+        // Ensure tables have a blank line before them (for Markdig compatibility).
         markdown = System.Text.RegularExpressions.Regex.Replace(
             markdown,
-            @"\$\$(.+?)\$\$",
-            m => {
+            @"(\n[^\n\|]+)\n(\|[^\n]+\|)",
+            "$1\n\n$2",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+
+        return PreprocessMathSegment(markdown);
+    }
+
+    private string PreprocessMathSegment(string markdown)
+    {
+        var codeSpans = new List<string>();
+        markdown = System.Text.RegularExpressions.Regex.Replace(
+            markdown,
+            @"(`+)([\s\S]*?)\1",
+            m =>
+            {
+                var index = codeSpans.Count;
+                codeSpans.Add(m.Value);
+                return $"@@MDVIEWER_CODE_SPAN_{index}@@";
+            });
+
+        markdown = System.Text.RegularExpressions.Regex.Replace(
+            markdown,
+            @"(?<!\\)\$\$(.+?)(?<!\\)\$\$",
+            m =>
+            {
                 var math = System.Net.WebUtility.HtmlEncode(m.Groups[1].Value.Trim());
                 return $"<div class=\"math-display\" data-math=\"{math}\"></div>";
             },
-            System.Text.RegularExpressions.RegexOptions.Singleline
-        );
-        
-        // Process inline math ($...$) - simple pattern, non-greedy
+            System.Text.RegularExpressions.RegexOptions.Singleline);
+
         markdown = System.Text.RegularExpressions.Regex.Replace(
             markdown,
-            @"(?<!\$)\$([^$\n]+?)\$(?!\$)",
-            m => {
+            @"(?<![\\$])\$([^\s$\d](?:[^$\n]*?[^\s$])?)\$(?![$\d])",
+            m =>
+            {
                 var math = System.Net.WebUtility.HtmlEncode(m.Groups[1].Value.Trim());
                 return $"<span class=\"math-inline\" data-math=\"{math}\"></span>";
-            }
-        );
-        
+            });
+
+        for (var i = 0; i < codeSpans.Count; i++)
+            markdown = markdown.Replace($"@@MDVIEWER_CODE_SPAN_{i}@@", codeSpans[i]);
+
         return markdown;
     }
 
@@ -2632,18 +2743,21 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
                 var names = string.Join(", ", modifiedTabs.Select(t => t.FileName));
                 var result = await ShowUnsavedChangesDialog(names);
 
+                var canClose = result != "Cancel";
+
                 if (result == "Save")
                 {
                     foreach (var tab in modifiedTabs)
                     {
-                        if (!tab.IsNewFile && !string.IsNullOrEmpty(tab.FilePath))
+                        if (!await SaveTab(tab))
                         {
-                            await SaveTabToFile(tab, tab.FilePath);
+                            canClose = false;
+                            break;
                         }
                     }
                 }
 
-                if (result != "Cancel")
+                if (canClose)
                 {
                     _isClosingConfirmed = true;
                     Close();
@@ -2666,6 +2780,7 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
             tab.Watcher?.Dispose();
             try { if (File.Exists(tab.TempHtmlPath)) File.Delete(tab.TempHtmlPath); } catch { }
         }
+        try { if (_welcomeTempHtmlPath != null && File.Exists(_welcomeTempHtmlPath)) File.Delete(_welcomeTempHtmlPath); } catch { }
 
         base.OnClosed(e);
     }
