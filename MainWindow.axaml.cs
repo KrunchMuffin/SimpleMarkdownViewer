@@ -41,6 +41,7 @@ public partial class MainWindow : Window
     private readonly DockPanel _mainPanel;
     private readonly MenuItem _recentMenu = null!;
     private readonly MarkdownPipeline _pipeline;
+    private readonly object _markdownRenderLock = new();
     
     private static readonly string SettingsDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -82,6 +83,7 @@ public partial class MainWindow : Window
     private Timer? _previewDebounceTimer;
     private const int PreviewDebounceMs = 300;
     private int _untitledCounter;
+    private int _editorRenderRequestId;
 
     // Single-instance pipe server
     private CancellationTokenSource? _pipeCts;
@@ -1813,7 +1815,7 @@ public partial class MainWindow : Window
 
     // ===================== Edit Mode =====================
 
-    private void OnToggleEditModeClick(object? sender, RoutedEventArgs e)
+    private async void OnToggleEditModeClick(object? sender, RoutedEventArgs e)
     {
         _isEditMode = !_isEditMode;
 
@@ -1849,8 +1851,9 @@ public partial class MainWindow : Window
             {
                 var tab = _tabs[_selectedTabIndex];
                 var content = tab.EditContent ?? "";
-                tab.CachedHtml = BuildHtmlForTab(tab, content);
-                RenderHtml(tab.CachedHtml);
+                tab.CachedHtml = await BuildHtmlForTabAsync(tab, content);
+                if (_selectedTabIndex >= 0 && _tabs[_selectedTabIndex] == tab)
+                    RenderHtml(tab.CachedHtml);
             }
         }
     }
@@ -1912,13 +1915,20 @@ public partial class MainWindow : Window
             Timeout.Infinite);
     }
 
-    private void UpdatePreviewFromEditor(TabState tab)
+    private async void UpdatePreviewFromEditor(TabState tab)
     {
         if (_selectedTabIndex < 0 || _tabs[_selectedTabIndex] != tab) return;
 
+        var requestId = Interlocked.Increment(ref _editorRenderRequestId);
+        var content = tab.EditContent;
+
         try
         {
-            tab.CachedHtml = BuildHtmlForTab(tab, tab.EditContent);
+            var html = await BuildHtmlForTabAsync(tab, content);
+            if (requestId != _editorRenderRequestId || _selectedTabIndex < 0 || _tabs[_selectedTabIndex] != tab)
+                return;
+
+            tab.CachedHtml = html;
             RenderHtml(tab.CachedHtml);
         }
         catch (Exception ex)
@@ -2270,7 +2280,7 @@ public partial class MainWindow : Window
             Spacing = 8
         };
         info.Children.Add(new TextBlock { Text = "Simple Markdown Viewer", FontSize = 20, FontWeight = Avalonia.Media.FontWeight.Bold, HorizontalAlignment = HorizontalAlignment.Center });
-        info.Children.Add(new TextBlock { Text = "Version 1.4.0", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
+        info.Children.Add(new TextBlock { Text = "Version 1.4.1", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "A lightweight markdown and Mermaid viewer/editor\nwith live preview, tabs, custom CSS, and dark mode.", TextAlignment = Avalonia.Media.TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "Built with Avalonia UI, WebView2, and Markdig", FontSize = 11, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
 
@@ -2538,7 +2548,12 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
     {
         foreach (var block in container)
         {
-            block.GetAttributes().AddProperty("data-line", (block.Line + 1).ToString());
+            if (block is Markdig.Extensions.Tables.Table)
+                continue;
+
+            if (block.Line >= 0)
+                block.GetAttributes().AddProperty("data-line", (block.Line + 1).ToString());
+
             if (block is Markdig.Syntax.ContainerBlock childContainer)
                 AddLineNumbers(childContainer);
         }
@@ -2729,6 +2744,17 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
         return BuildHtmlFromMarkdown(markdown);
     }
 
+    private Task<string> BuildHtmlForTabAsync(TabState tab, string content)
+    {
+        return Task.Run(() =>
+        {
+            lock (_markdownRenderLock)
+            {
+                return BuildHtmlForTab(tab, content);
+            }
+        });
+    }
+
     private async Task GenerateHtml(TabState tab, bool forceDiskReload = false)
     {
         try
@@ -2738,7 +2764,7 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
                 ? tab.EditContent
                 : await File.ReadAllTextAsync(tab.FilePath, Encoding.UTF8);
 
-            tab.CachedHtml = BuildHtmlForTab(tab, markdown);
+            tab.CachedHtml = await BuildHtmlForTabAsync(tab, markdown);
         }
         catch (Exception ex)
         {
@@ -2780,7 +2806,7 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
                 _textEditor.TextChanged += OnEditorTextChanged;
             }
 
-            tab.CachedHtml = BuildHtmlForTab(tab, content);
+            tab.CachedHtml = await BuildHtmlForTabAsync(tab, content);
             if (_tabs.IndexOf(tab) == _selectedTabIndex)
                 RenderHtml(tab.CachedHtml);
 
@@ -2845,21 +2871,57 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
 
     private string PreprocessMarkdown(string markdown)
     {
-        var fencedCodeRegex = new System.Text.RegularExpressions.Regex(
-            @"(?ms)^[ \t]*(```|~~~)[^\r\n]*(?:\r?\n.*?)*?^[ \t]*\1[ \t]*$",
-            System.Text.RegularExpressions.RegexOptions.Multiline);
+        var result = new StringBuilder(markdown.Length);
+        var segmentStart = 0;
+        var position = 0;
 
-        var result = new StringBuilder();
-        var lastIndex = 0;
-
-        foreach (System.Text.RegularExpressions.Match match in fencedCodeRegex.Matches(markdown))
+        while (position < markdown.Length)
         {
-            result.Append(PreprocessMarkdownSegment(markdown.Substring(lastIndex, match.Index - lastIndex)));
-            result.Append(match.Value);
-            lastIndex = match.Index + match.Length;
+            var lineStart = position;
+            var lineEnd = FindLineEnd(markdown, lineStart);
+            var nextLineStart = FindNextLineStart(markdown, lineEnd);
+            var line = markdown.Substring(lineStart, lineEnd - lineStart);
+
+            if (TryGetFenceLine(line, out var fenceChar, out var fenceLength, out _))
+            {
+                var scanPosition = nextLineStart;
+
+                while (scanPosition < markdown.Length)
+                {
+                    var closingLineStart = scanPosition;
+                    var closingLineEnd = FindLineEnd(markdown, closingLineStart);
+                    var closingNextLineStart = FindNextLineStart(markdown, closingLineEnd);
+                    var closingLine = markdown.Substring(closingLineStart, closingLineEnd - closingLineStart);
+
+                    if (IsClosingFenceLine(closingLine, fenceChar, fenceLength))
+                    {
+                        if (lineStart > segmentStart)
+                            result.Append(PreprocessMarkdownSegment(markdown.Substring(segmentStart, lineStart - segmentStart)));
+
+                        result.Append(markdown, lineStart, closingNextLineStart - lineStart);
+                        position = closingNextLineStart;
+                        segmentStart = position;
+                        goto ContinueScanning;
+                    }
+
+                    scanPosition = closingNextLineStart;
+                }
+
+                if (lineStart > segmentStart)
+                    result.Append(PreprocessMarkdownSegment(markdown.Substring(segmentStart, lineStart - segmentStart)));
+
+                result.Append(markdown, lineStart, markdown.Length - lineStart);
+                return result.ToString();
+            }
+
+            position = nextLineStart;
+
+        ContinueScanning:;
         }
 
-        result.Append(PreprocessMarkdownSegment(markdown.Substring(lastIndex)));
+        if (segmentStart < markdown.Length)
+            result.Append(PreprocessMarkdownSegment(markdown.Substring(segmentStart)));
+
         return result.ToString();
     }
 
