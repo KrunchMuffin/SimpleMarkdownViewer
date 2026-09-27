@@ -38,11 +38,26 @@
                 <MenuItem Header="Open _Custom CSS" Click="OnOpenCustomCssClick"/>
             </MenuItem>
             <MenuItem Header="_Help">
+                <MenuItem Header="Check for _Updates..." Click="OnCheckForUpdatesClick"/>
+                <MenuItem Header="Check for Updates _Automatically" x:Name="AutoUpdateCheckMenuItem"
+                          ToggleType="CheckBox" Click="OnToggleAutoUpdateCheckClick"/>
+                <Separator/>
                 <MenuItem Header="_Dev Tools" Click="OnDevToolsClick" InputGesture="F12"/>
                 <Separator/>
                 <MenuItem Header="_About" Click="OnAboutClick"/>
             </MenuItem>
         </Menu>
+
+        <!-- Update available notice (hidden until a newer release is found) -->
+        <Border DockPanel.Dock="Top" x:Name="UpdateBanner" Padding="10,6" IsVisible="False">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="Dismiss" Click="OnDismissUpdateClick"
+                        Padding="10,2" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                <Button DockPanel.Dock="Right" Content="Download" Click="OnDownloadUpdateClick"
+                        Padding="10,2" VerticalAlignment="Center"/>
+                <TextBlock x:Name="UpdateBannerText" VerticalAlignment="Center" TextWrapping="Wrap"/>
+            </DockPanel>
+        </Border>
 
         <!-- Tab Strip -->
         <Border DockPanel.Dock="Top" Background="#e0e0e0" x:Name="TabStrip" Padding="4,4,4,4">

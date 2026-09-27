@@ -37,6 +37,9 @@ public partial class MainWindow : Window
     private readonly Button _tabDropdown;
     private readonly MenuItem _themeMenuItem;
     private readonly MenuItem _lineNumbersMenuItem;
+    private readonly MenuItem _autoUpdateCheckMenuItem;
+    private readonly Border _updateBanner;
+    private readonly TextBlock _updateBannerText;
     private readonly DockPanel _mainPanel;
     private readonly MenuItem _recentMenu = null!;
     private readonly MarkdownRenderer _markdownRenderer = new();
@@ -50,6 +53,14 @@ public partial class MainWindow : Window
 
     private bool _isDarkMode = false;
     private bool _showPreviewLineNumbers = false;
+
+    // Update check state, persisted in settings
+    private bool _checkForUpdates = true;
+    private DateTime? _lastUpdateCheckUtc;
+    private string? _latestKnownVersion;
+    private string? _latestKnownReleaseUrl;
+    private string? _dismissedUpdateVersion;
+    private static readonly TimeSpan UpdateCheckInterval = TimeSpan.FromDays(1);
     private bool _webViewReady = false;
     private string? _welcomeTempHtmlPath;
     private int _renderVersion;
@@ -121,6 +132,11 @@ public partial class MainWindow : Window
         public bool IsDarkMode { get; set; } = false;
         public bool ShowPreviewLineNumbers { get; set; } = false;
         public List<string> RecentFiles { get; set; } = new();
+        public bool CheckForUpdates { get; set; } = true;
+        public DateTime? LastUpdateCheckUtc { get; set; }
+        public string? LatestKnownVersion { get; set; }
+        public string? LatestKnownReleaseUrl { get; set; }
+        public string? DismissedUpdateVersion { get; set; }
     }
 
     private void LoadSettings()
@@ -137,6 +153,11 @@ public partial class MainWindow : Window
                     _showPreviewLineNumbers = settings.ShowPreviewLineNumbers;
                     _recentFiles.Clear();
                     _recentFiles.AddRange(settings.RecentFiles.Where(File.Exists).Take(MaxRecentFiles));
+                    _checkForUpdates = settings.CheckForUpdates;
+                    _lastUpdateCheckUtc = settings.LastUpdateCheckUtc;
+                    _latestKnownVersion = settings.LatestKnownVersion;
+                    _latestKnownReleaseUrl = settings.LatestKnownReleaseUrl;
+                    _dismissedUpdateVersion = settings.DismissedUpdateVersion;
                 }
             }
         }
@@ -158,7 +179,12 @@ public partial class MainWindow : Window
             { 
                 IsDarkMode = _isDarkMode,
                 ShowPreviewLineNumbers = _showPreviewLineNumbers,
-                RecentFiles = _recentFiles.ToList()
+                RecentFiles = _recentFiles.ToList(),
+                CheckForUpdates = _checkForUpdates,
+                LastUpdateCheckUtc = _lastUpdateCheckUtc,
+                LatestKnownVersion = _latestKnownVersion,
+                LatestKnownReleaseUrl = _latestKnownReleaseUrl,
+                DismissedUpdateVersion = _dismissedUpdateVersion
             };
             var json = JsonSerializer.Serialize(settings);
             File.WriteAllText(SettingsPath, json);
@@ -242,6 +268,9 @@ public partial class MainWindow : Window
         _tabScrollLeft.Foreground = tabBtnFg;
         _tabScrollRight.Foreground = tabBtnFg;
         _tabDropdown.Foreground = tabBtnFg;
+        _updateBanner.Background = new SolidColorBrush(Color.Parse(_isDarkMode ? "#0c2d4a" : "#ddf4ff"));
+        _updateBannerText.Foreground = new SolidColorBrush(Color.Parse(_isDarkMode ? "#e6edf3" : "#1f2328"));
+        _autoUpdateCheckMenuItem.IsChecked = _checkForUpdates;
     }
 
     public MainWindow()
@@ -259,6 +288,9 @@ public partial class MainWindow : Window
         _tabDropdown = this.FindControl<Button>("TabDropdown")!;
         _themeMenuItem = this.FindControl<MenuItem>("ThemeMenuItem")!;
         _lineNumbersMenuItem = this.FindControl<MenuItem>("LineNumbersMenuItem")!;
+        _autoUpdateCheckMenuItem = this.FindControl<MenuItem>("AutoUpdateCheckMenuItem")!;
+        _updateBanner = this.FindControl<Border>("UpdateBanner")!;
+        _updateBannerText = this.FindControl<TextBlock>("UpdateBannerText")!;
         _mainPanel = this.FindControl<DockPanel>("MainPanel")!;
         _recentMenu = this.FindControl<MenuItem>("RecentMenu")!;
 
@@ -313,6 +345,94 @@ public partial class MainWindow : Window
         StartPipeServer();
 
         _ = Task.Run(DeleteOrphanedTempFiles);
+
+        Opened += (s, e) => _ = CheckForUpdatesOnStartupAsync();
+    }
+
+    // ===================== Update Check =====================
+
+    private async Task CheckForUpdatesOnStartupAsync()
+    {
+        if (!_checkForUpdates) return;
+
+        // Show what the last check found right away; only ask GitHub again once a day
+        ShowUpdateBannerIfNewer();
+        if (_lastUpdateCheckUtc is { } last && DateTime.UtcNow - last < UpdateCheckInterval)
+            return;
+
+        try
+        {
+            await RefreshLatestReleaseAsync();
+            ShowUpdateBannerIfNewer();
+        }
+        catch
+        {
+            // Offline or GitHub unreachable; try again next launch
+        }
+    }
+
+    private async Task RefreshLatestReleaseAsync()
+    {
+        var release = await UpdateChecker.GetLatestReleaseAsync();
+        _latestKnownVersion = release.Version.ToString();
+        _latestKnownReleaseUrl = release.PageUrl;
+        _lastUpdateCheckUtc = DateTime.UtcNow;
+        SaveSettings();
+    }
+
+    private bool ShowUpdateBannerIfNewer(bool ignoreDismissed = false)
+    {
+        if (!UpdateChecker.TryParseVersion(_latestKnownVersion, out var latest) || !UpdateChecker.IsNewerThanCurrent(latest))
+        {
+            _updateBanner.IsVisible = false;
+            return false;
+        }
+
+        if (!ignoreDismissed && _dismissedUpdateVersion == latest.ToString())
+            return true;
+
+        _updateBannerText.Text = $"Simple Markdown Viewer {latest} is available. You have {UpdateChecker.CurrentVersion}.";
+        _updateBanner.IsVisible = true;
+        return true;
+    }
+
+    private async void OnCheckForUpdatesClick(object? sender, RoutedEventArgs e)
+    {
+        _statusText.Text = "Checking for updates...";
+        try
+        {
+            await RefreshLatestReleaseAsync();
+            _statusText.Text = ShowUpdateBannerIfNewer(ignoreDismissed: true)
+                ? $"Version {_latestKnownVersion} is available."
+                : $"You're up to date (version {UpdateChecker.CurrentVersion}).";
+        }
+        catch (Exception ex)
+        {
+            _statusText.Text = $"Couldn't check for updates: {ex.Message}";
+        }
+    }
+
+    private void OnToggleAutoUpdateCheckClick(object? sender, RoutedEventArgs e)
+    {
+        _checkForUpdates = !_checkForUpdates;
+        _autoUpdateCheckMenuItem.IsChecked = _checkForUpdates;
+        SaveSettings();
+        _statusText.Text = _checkForUpdates
+            ? "Automatic update checks turned on."
+            : "Automatic update checks turned off. Use Help > Check for Updates to check manually.";
+    }
+
+    private void OnDownloadUpdateClick(object? sender, RoutedEventArgs e)
+    {
+        OpenLink(_latestKnownReleaseUrl ?? UpdateChecker.ReleasesPageUrl);
+    }
+
+    private void OnDismissUpdateClick(object? sender, RoutedEventArgs e)
+    {
+        // Stay quiet about this version; a newer release will show the notice again
+        _dismissedUpdateVersion = _latestKnownVersion;
+        _updateBanner.IsVisible = false;
+        SaveSettings();
     }
 
     private static void DeleteOrphanedTempFiles()

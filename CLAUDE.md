@@ -39,7 +39,7 @@ This is a single-window Avalonia UI desktop application for viewing and editing 
 - **MainWindow** (`MainWindow.axaml.cs`) - UI and application logic:
   - Tab management (`TabState` class) - Each open file is a tab with its own file watcher
   - Split-view editor - AvaloniaEdit text editor (left) with live WebView preview (right), toggled via Ctrl+E
-  - Settings persistence (`AppSettings` class) - Dark mode, preview line numbers, and recent files stored in `%LocalAppData%/SimpleMarkdownViewer/settings.json`
+  - Settings persistence (`AppSettings` class) - Dark mode, preview line numbers, recent files, and update-check state stored in `%LocalAppData%/SimpleMarkdownViewer/settings.json`
   - Custom CSS support - Optional `custom-dark.css` / `custom-light.css` in settings folder, injected after built-in styles
   - WebView integration - `NativeWebView` renders in WebView2 (Windows), WKWebView (macOS), or WebKitGTK (Linux); WebView2 profile lives in `%LocalAppData%/SimpleMarkdownViewer/WebView2Data`
   - Preview updates - Same-tab re-renders swap content in place via `mdviewer.setContent()` (keeps scroll, reuses unchanged diagrams); tab/theme/line-number/custom-CSS changes do a full page load
@@ -49,6 +49,7 @@ This is a single-window Avalonia UI desktop application for viewing and editing 
 - **MarkdownRenderer** (`MarkdownRenderer.cs`) - Markdig pipeline plus preprocessing for Mermaid fences and KaTeX math; optional source line numbers via AST walking
 - **PreviewPage** (`PreviewPage.cs`) - Builds the preview page shell: Content-Security-Policy (nonce-only scripts), `<base href>` to the file's folder, theme/line-number attributes, custom CSS
 - **Preview assets** (`Assets/preview/`) - `preview.css` (theme colors as CSS variables), `print.css`, `preview.js` (Mermaid/hljs/KaTeX rendering, diagram fullscreen, context menu, link routing)
+- **UpdateChecker** (`UpdateChecker.cs`) - Reads the latest release from the GitHub releases API; MainWindow checks at most once a day on startup (result cached in settings), shows a dismissible notice bar, and offers Help > Check for Updates plus an on/off toggle
 - **Program.cs** - Entry point with single-instance support via named mutex and named pipe IPC
 
 ### Rendering Pipeline
