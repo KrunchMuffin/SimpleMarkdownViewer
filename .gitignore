@@ -35,3 +35,9 @@ error.txt
 
 # Greenfish Icon Editor project (keep the exported ico)
 *.gfie
+
+.claude/
+
+AGENTS.md
+
+CLAUDE.md
