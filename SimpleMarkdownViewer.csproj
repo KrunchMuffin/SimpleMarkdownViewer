@@ -33,7 +33,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <AvaloniaResource Include="Assets\**" Exclude="Assets\libs\**;Assets\preview\**" />
+    <!-- app-icon.png is the source artwork, not used at runtime -->
+    <AvaloniaResource Include="Assets\**" Exclude="Assets\libs\**;Assets\preview\**;Assets\app-icon.png" />
     <!-- Bundled JS/CSS libraries (avoids CDN tracking prevention blocks) and preview page assets -->
     <Content Include="Assets\libs\**;Assets\preview\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
