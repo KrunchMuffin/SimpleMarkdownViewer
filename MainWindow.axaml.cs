@@ -1201,7 +1201,7 @@ public partial class MainWindow : Window
             _editModeMenuItem.Header = "Exit _Edit Mode";
 
             LoadCurrentTabIntoEditor();
-            _textEditor.Focus();
+            FocusEditorWhenShown();
             UpdatePreviewEditModeLabel();
         }
         else
@@ -1498,7 +1498,14 @@ public partial class MainWindow : Window
 
         SelectTab(_tabs.Count - 1);
 
-        _textEditor.Focus();
+        FocusEditorWhenShown();
+    }
+
+    private void FocusEditorWhenShown()
+    {
+        // The editor was just made visible and can't take focus until it has been laid
+        // out; focusing immediately leaves keyboard input with the WebView
+        Dispatcher.UIThread.Post(() => _textEditor.TextArea.Focus(), DispatcherPriority.Loaded);
     }
 
     // ===================== Unsaved Changes Dialog =====================
