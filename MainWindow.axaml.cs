@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -632,8 +633,7 @@ public partial class MainWindow : Window
 
     private void OnDragOver(object? sender, DragEventArgs e)
     {
-#pragma warning disable CS0618 // Type or member is obsolete
-        if (e.Data.Contains(DataFormats.Files))
+        if (e.DataTransfer.Contains(DataFormat.File))
         {
             e.DragEffects = DragDropEffects.Copy;
             e.Handled = true;
@@ -642,20 +642,17 @@ public partial class MainWindow : Window
         {
             e.DragEffects = DragDropEffects.None;
         }
-#pragma warning restore CS0618
     }
 
     private async void OnDrop(object? sender, DragEventArgs e)
     {
-#pragma warning disable CS0618 // Type or member is obsolete
-        if (!e.Data.Contains(DataFormats.Files)) return;
+        if (!e.DataTransfer.Contains(DataFormat.File)) return;
 
         e.Handled = true;
 
-        var files = e.Data.GetFiles();
-#pragma warning restore CS0618
+        var files = e.DataTransfer.TryGetFiles();
         if (files == null) return;
-        
+
         foreach (var file in files)
         {
             var path = file.Path.LocalPath;
@@ -881,9 +878,7 @@ public partial class MainWindow : Window
                 return;
             }
             
-#pragma warning disable CS0618 // Type or member is obsolete
-            var text = await clipboard.GetTextAsync();
-#pragma warning restore CS0618
+            var text = await clipboard.TryGetTextAsync();
             if (string.IsNullOrWhiteSpace(text))
             {
                 _statusText.Text = "Clipboard is empty or contains no text";
@@ -1656,7 +1651,7 @@ public partial class MainWindow : Window
             Height = 300,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             CanResize = false,
-            SystemDecorations = SystemDecorations.Full,
+            WindowDecorations = WindowDecorations.Full,
             ExtendClientAreaToDecorationsHint = false
         };
 
