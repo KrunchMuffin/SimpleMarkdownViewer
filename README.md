@@ -1,5 +1,9 @@
 # Simple Markdown Viewer
 
+[![Build](https://github.com/KrunchMuffin/SimpleMarkdownViewer/actions/workflows/build.yml/badge.svg)](https://github.com/KrunchMuffin/SimpleMarkdownViewer/actions/workflows/build.yml)
+[![Latest release](https://img.shields.io/github/v/release/KrunchMuffin/SimpleMarkdownViewer)](https://github.com/KrunchMuffin/SimpleMarkdownViewer/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A lightweight, fast markdown and Mermaid viewer and editor built with Avalonia UI.
 
 ![Screenshot](screenshot.png)
@@ -145,6 +149,14 @@ For each group you tick, the app becomes the default and is added to **Open with
 - [Mermaid](https://mermaid.js.org/) - Diagrams
 - [KaTeX](https://katex.org/) - Math rendering
 
+## Contributing
+
+Bug reports, ideas, and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started, and please follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Security
+
+Please report security problems privately, as described in [SECURITY.md](SECURITY.md).
+
 ## License
 
-MIT License - see [LICENSE](LICENSE) file.
+MIT License, © 2026 DAB Worx Inc. See the [LICENSE](LICENSE) file.

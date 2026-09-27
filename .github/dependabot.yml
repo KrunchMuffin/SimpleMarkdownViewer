@@ -1,0 +1,19 @@
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # Avalonia packages have to move together
+      avalonia:
+        patterns:
+          - "Avalonia*"
+          - "AvaloniaEdit*"
+          - "TextMateSharp*"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
