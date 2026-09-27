@@ -36,30 +36,34 @@ This is a single-window Avalonia UI desktop application for viewing and editing 
 
 ### Core Components
 
-- **MainWindow** (`MainWindow.axaml.cs`) - Contains all application logic in a single file:
+- **MainWindow** (`MainWindow.axaml.cs`) - UI and application logic:
   - Tab management (`TabState` class) - Each open file is a tab with its own file watcher
   - Split-view editor - AvaloniaEdit text editor (left) with live WebView preview (right), toggled via Ctrl+E
   - Settings persistence (`AppSettings` class) - Dark mode, preview line numbers, and recent files stored in `%LocalAppData%/SimpleMarkdownViewer/settings.json`
   - Custom CSS support - Optional `custom-dark.css` / `custom-light.css` in settings folder, injected after built-in styles
-  - Markdown rendering - Uses Markdig with preprocessing for Mermaid diagrams and KaTeX math; optional source line numbers via AST walking
-  - WebView integration - Renders HTML in WebView2 (Windows), WKWebView (macOS), or WebKitGTK (Linux)
+  - WebView integration - `NativeWebView` renders in WebView2 (Windows), WKWebView (macOS), or WebKitGTK (Linux); WebView2 profile lives in `%LocalAppData%/SimpleMarkdownViewer/WebView2Data`
+  - Preview updates - Same-tab re-renders swap content in place via `mdviewer.setContent()` (keeps scroll, reuses unchanged diagrams); tab/theme/line-number/custom-CSS changes do a full page load
+  - Host commands - Preview JS sends `app://<command>?token=<nonce>` navigations (`toggle-edit`, `open-link`, `ready`); the host rejects any without the page's CSP nonce
   - Tab overflow - ScrollViewer with arrow buttons and dropdown picker for many open tabs
   - Context menus - Custom JS context menu in WebView preview; Avalonia context menu in editor with Format submenu; tab right-click with Close/Close Others/Close to Right/Close All
+- **MarkdownRenderer** (`MarkdownRenderer.cs`) - Markdig pipeline plus preprocessing for Mermaid fences and KaTeX math; optional source line numbers via AST walking
+- **PreviewPage** (`PreviewPage.cs`) - Builds the preview page shell: Content-Security-Policy (nonce-only scripts), `<base href>` to the file's folder, theme/line-number attributes, custom CSS
+- **Preview assets** (`Assets/preview/`) - `preview.css` (theme colors as CSS variables), `print.css`, `preview.js` (Mermaid/hljs/KaTeX rendering, diagram fullscreen, context menu, link routing)
 - **Program.cs** - Entry point with single-instance support via named mutex and named pipe IPC
 
 ### Rendering Pipeline
 
 1. Markdown file is read (explicit UTF-8 encoding)
-2. Preprocessed for Mermaid (`PreprocessMermaid`) and math (`PreprocessMath`)
-3. Converted to HTML via Markdig (`ConvertMarkdownToHtml`)
-4. Injected into HTML template (`GetTemplate`) with theme-aware styling
-5. Written to temp file (UTF-8 with BOM) and loaded in WebView
+2. Mermaid fences extracted and math preprocessed (`MarkdownRenderer`)
+3. Converted to an HTML fragment via Markdig (`MarkdownRenderer.ToHtml`) and cached per tab
+4. If the WebView already shows this tab's page, the fragment is swapped in by script; otherwise
+   `PreviewPage.Build` wraps it in the page shell, which is written to a temp file (UTF-8 with BOM) and loaded
 
 ### Key Dependencies
 
 - **Avalonia 11.3.12** - Cross-platform UI framework
 - **AvaloniaEdit** - Code editor control with TextMate syntax highlighting
-- **WebView.Avalonia** - Cross-platform WebView wrapper
+- **Avalonia.Controls.WebView** - Official cross-platform `NativeWebView` control
 - **Markdig** - Markdown parsing with advanced extensions
 - Client-side: highlight.js, Mermaid, KaTeX (loaded from CDN)
 

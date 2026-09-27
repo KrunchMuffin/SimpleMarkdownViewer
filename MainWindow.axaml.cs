@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -13,19 +14,18 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using AvaloniaEdit;
 using AvaloniaEdit.TextMate;
-using AvaloniaWebView;
 using TextMateSharp.Grammars;
-using WebViewCore.Events;
 
 namespace SimpleMarkdownViewer;
 
 public partial class MainWindow : Window
 {
-    private readonly WebView _webView;
+    private readonly NativeWebView _webView;
     private readonly TextBlock _statusText;
     private readonly Border _statusBar;
     private readonly Border _tabStrip;
@@ -247,7 +247,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        _webView = this.FindControl<WebView>("WebView")!;
+        _webView = this.FindControl<NativeWebView>("WebView")!;
         _statusText = this.FindControl<TextBlock>("StatusText")!;
         _statusBar = this.FindControl<Border>("StatusBar")!;
         _tabStrip = this.FindControl<Border>("TabStrip")!;
@@ -289,11 +289,12 @@ public partial class MainWindow : Window
         _textEditor.TextChanged += OnEditorTextChanged;
 
         // Wire up WebView events
-        _webView.WebViewCreated += OnWebViewCreated;
-        _webView.NavigationStarting += OnNavigationStarting;
+        _webView.EnvironmentRequested += OnWebViewEnvironmentRequested;
+        _webView.AdapterCreated += OnWebViewCreated;
+        _webView.NavigationStarted += OnNavigationStarting;
+        // Links are routed through the host by the preview script; never open popups
+        _webView.NewWindowRequested += (s, e) => e.Handled = true;
 
-        // Show welcome page after window loads
-        this.Loaded += OnWindowLoaded;
         this.KeyDown += OnKeyDown;
 
         // Enable drag and drop (use Tunnel to intercept before WebView)
@@ -563,18 +564,6 @@ public partial class MainWindow : Window
         _textEditor.Focus();
     }
 
-    private async void OnWindowLoaded(object? sender, RoutedEventArgs e)
-    {
-        // Give WebView time to initialize
-        await Task.Delay(500);
-
-        if (_tabs.Count == 0)
-        {
-            _webViewReady = true;
-            ShowWelcome();
-        }
-    }
-
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
         var ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
@@ -678,18 +667,21 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OnWebViewCreated(object? sender, WebViewCreatedEventArgs e)
+    private static void OnWebViewEnvironmentRequested(object? sender, WebViewEnvironmentRequestedEventArgs e)
+    {
+        e.EnableDevTools = true;
+
+        // Keep the browser profile with our settings; the default location next to the
+        // exe is not writable when installed under Program Files
+        if (e is WindowsWebView2EnvironmentRequestedEventArgs webView2)
+            webView2.UserDataFolder = Path.Combine(SettingsDir, "WebView2Data");
+    }
+
+    private void OnWebViewCreated(object? sender, WebViewAdapterEventArgs e)
     {
         _webViewReady = true;
-        _statusText.Text = "Ready - Open a markdown or Mermaid file (Ctrl+O)";
-
-        // Set WebView background color to match theme (fixes dark mode initial render)
-        try
-        {
-            var bgColor = _isDarkMode ? "#0d1117" : "#ffffff";
-            await _webView.ExecuteScriptAsync($"document.body.style.backgroundColor = '{bgColor}';");
-        }
-        catch { /* Ignore if not ready */ }
+        if (_tabs.Count == 0)
+            _statusText.Text = "Ready - Open a markdown or Mermaid file (Ctrl+O)";
 
         RefreshPreview();
     }
@@ -725,9 +717,9 @@ public partial class MainWindow : Window
 
     private static bool IsSupportedDocumentFile(string filePath) => IsMarkdownFile(filePath) || IsMermaidFile(filePath);
 
-    private void OnNavigationStarting(object? sender, WebViewCore.Events.WebViewUrlLoadingEventArg e)
+    private void OnNavigationStarting(object? sender, WebViewNavigationStartingEventArgs e)
     {
-        var url = e.Url?.ToString() ?? "";
+        var url = e.Request?.ToString() ?? "";
 
         // Handle app:// commands from the preview's JavaScript (context menu, link clicks)
         if (url.StartsWith("app://", StringComparison.OrdinalIgnoreCase))
@@ -1586,7 +1578,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OnSaveAsPdfClick(object? sender, RoutedEventArgs e)
+    private void OnSaveAsPdfClick(object? sender, RoutedEventArgs e)
     {
         if (_selectedTabIndex < 0 || _selectedTabIndex >= _tabs.Count)
         {
@@ -1597,7 +1589,7 @@ public partial class MainWindow : Window
         try
         {
             // Open print dialog - user can select "Microsoft Print to PDF" to save as PDF
-            await _webView.ExecuteScriptAsync("window.print();");
+            _webView.ShowPrintUI();
         }
         catch (Exception ex)
         {
@@ -1628,9 +1620,24 @@ public partial class MainWindow : Window
         }
     }
 
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int CoreWebView2OpenDevToolsWindow(IntPtr self);
+
     private void OnDevToolsClick(object? sender, RoutedEventArgs e)
     {
-        _webView.OpenDevToolsWindow();
+        // NativeWebView has no managed DevTools API; call ICoreWebView2::OpenDevToolsWindow
+        // (vtable slot 51) on Windows. Elsewhere F12 inside the preview opens them.
+        if (_webView.TryGetPlatformHandle() is IWindowsWebView2PlatformHandle webView2 && webView2.CoreWebView2 != IntPtr.Zero)
+        {
+            var vtable = Marshal.ReadIntPtr(webView2.CoreWebView2);
+            var openDevTools = Marshal.GetDelegateForFunctionPointer<CoreWebView2OpenDevToolsWindow>(
+                Marshal.ReadIntPtr(vtable, 51 * IntPtr.Size));
+            openDevTools(webView2.CoreWebView2);
+        }
+        else
+        {
+            _statusText.Text = "Click the preview and press F12 to open developer tools.";
+        }
     }
 
     private async void OnAboutClick(object? sender, RoutedEventArgs e)
@@ -2073,7 +2080,7 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
             {
                 var script = $"(function () {{ window.mdviewer.setEditMode({(_isEditMode ? "true" : "false")}); " +
                              $"return window.mdviewer.setContent({JsonSerializer.Serialize(body)}); }})()";
-                var result = await _webView.ExecuteScriptAsync(script);
+                var result = await _webView.InvokeScript(script);
                 if (result?.Trim() == "true")
                     return;
             }
@@ -2100,7 +2107,7 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
         if (!_webViewReady) return;
         try
         {
-            _ = _webView.ExecuteScriptAsync($"window.mdviewer && window.mdviewer.setEditMode({(_isEditMode ? "true" : "false")});");
+            _ = _webView.InvokeScript($"window.mdviewer && window.mdviewer.setEditMode({(_isEditMode ? "true" : "false")});");
         }
         catch { }
     }
@@ -2115,7 +2122,7 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
             {
                 Query = $"v={renderVersion}"
             };
-            _webView.Url = uriBuilder.Uri;
+            _webView.Navigate(uriBuilder.Uri);
 
             // Navigation takes focus; hand it back to the editor
             await Task.Delay(100);

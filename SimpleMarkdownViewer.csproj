@@ -22,12 +22,10 @@
     <PackageReference Include="Avalonia.Diagnostics" Version="11.3.22" Condition="'$(Configuration)' == 'Debug'" />
 
     <!-- WebView -->
-    <PackageReference Include="WebView.Avalonia" Version="11.0.0.1" />
-    <PackageReference Include="WebView.Avalonia.Desktop" Version="11.0.0.1" />
+    <PackageReference Include="Avalonia.Controls.WebView" Version="11.4.1" />
 
     <!-- Markdown parsing -->
     <PackageReference Include="Markdig" Version="0.45.0" />
-    <PackageReference Include="WebView.Avalonia.Windows" Version="11.0.0.1" />
 
     <!-- Code editor -->
     <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.4.1" />
