@@ -1,0 +1,57 @@
+/* Print overrides. Loaded after custom CSS so printing always gets a clean,
+   light document regardless of theme or user styles. */
+@media print {
+    *, *::before, *::after {
+        color: #000000 !important;
+        text-shadow: none !important;
+        box-shadow: none !important;
+    }
+    html, body {
+        background: #ffffff !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        min-height: auto !important;
+        border: none !important;
+        font-size: 12pt !important;
+    }
+    body::before, body::after {
+        display: none !important;
+    }
+    #content, .markdown-body {
+        padding: 0 !important;
+        margin: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+        max-width: 100% !important;
+        min-height: auto !important;
+    }
+    h1, h2, h3, h4, h5, h6 {
+        color: #000000 !important;
+        border-color: #d0d7de !important;
+        text-shadow: none !important;
+    }
+    a { color: #0969da !important; }
+    p, li, td, th, blockquote, span, em, strong, del {
+        color: #000000 !important;
+    }
+    code, pre {
+        background-color: #f6f8fa !important;
+        color: #000000 !important;
+        border-color: #d0d7de !important;
+    }
+    pre::before { display: none !important; }
+    pre > code { background: #f6f8fa !important; color: #000000 !important; }
+    th, td {
+        border-color: #d0d7de !important;
+    }
+    th { background-color: #f6f8fa !important; }
+    blockquote { border-color: #d0d7de !important; background: transparent !important; }
+    blockquote::before { display: none !important; }
+    kbd { background-color: #f6f8fa !important; border-color: #d0d7de !important; }
+    hr { background-color: #d0d7de !important; height: 1px !important; }
+    hr::after { color: #999999 !important; }
+    img { box-shadow: none !important; border-color: #d0d7de !important; }
+    .mermaid { border-color: #d0d7de !important; }
+    .mermaid::after { display: none !important; }
+    .fullscreen-overlay, .fullscreen-controls, .ctx-menu { display: none !important; }
+}

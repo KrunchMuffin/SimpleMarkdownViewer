@@ -36,9 +36,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <AvaloniaResource Include="Assets\**" Exclude="Assets\libs\**" />
-    <!-- Bundled JS/CSS libraries (avoids CDN tracking prevention blocks) -->
-    <Content Include="Assets\libs\**">
+    <AvaloniaResource Include="Assets\**" Exclude="Assets\libs\**;Assets\preview\**" />
+    <!-- Bundled JS/CSS libraries (avoids CDN tracking prevention blocks) and preview page assets -->
+    <Content Include="Assets\libs\**;Assets\preview\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
