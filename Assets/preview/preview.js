@@ -6,6 +6,10 @@
 
     const root = document.documentElement;
 
+    // The host only accepts app:// commands carrying this page's CSP nonce, which
+    // markup injected through markdown cannot read
+    const hostToken = (document.currentScript && document.currentScript.nonce) || '';
+
     let currentFullscreenEl = null;
     let currentZoom = 1;
     let panX = 0, panY = 0;
@@ -21,8 +25,8 @@
     }
 
     function sendToHost(command, params) {
-        const query = params ? '?' + new URLSearchParams(params).toString() : '';
-        window.location.href = 'app://' + command + query;
+        const query = new URLSearchParams(Object.assign({ token: hostToken }, params)).toString();
+        window.location.href = 'app://' + command + '?' + query;
     }
 
     async function renderMermaidDiagrams() {
@@ -74,7 +78,8 @@
         mermaid.initialize({
             startOnLoad: false,
             theme: root.dataset.mermaidTheme || 'default',
-            securityLevel: 'loose'
+            // strict: diagram labels are escaped and click directives are ignored
+            securityLevel: 'strict'
         });
 
         renderMermaidDiagrams().then(attachMermaidFullscreenHandlers);

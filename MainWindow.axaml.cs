@@ -84,6 +84,9 @@ public partial class MainWindow : Window
     private int _untitledCounter;
     private int _editorRenderRequestId;
 
+    // CSP nonce for preview pages; also authenticates app:// commands from them
+    private readonly string _pageNonce = PreviewPage.CreateNonce();
+
     // Single-instance pipe server
     private CancellationTokenSource? _pipeCts;
 
@@ -785,6 +788,10 @@ public partial class MainWindow : Window
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
             return;
 
+        // Reject commands that did not come from our own preview script
+        if (GetQueryValue(uri, "token") != _pageNonce)
+            return;
+
         switch (uri.Host.ToLowerInvariant())
         {
             case "toggle-edit":
@@ -861,7 +868,7 @@ public partial class MainWindow : Window
             : null;
 
         return PreviewPage.Build(
-            new PreviewPage.Options(_isDarkMode, _showPreviewLineNumbers, _isEditMode, baseDirectory, GetCustomCssTag()),
+            new PreviewPage.Options(_isDarkMode, _showPreviewLineNumbers, _isEditMode, baseDirectory, GetCustomCssTag(), _pageNonce),
             "{{CONTENT}}");
     }
 

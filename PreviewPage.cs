@@ -19,7 +19,23 @@ internal static class PreviewPage
         bool ShowLineNumbers,
         bool IsEditMode,
         string? BaseDirectory,
-        string CustomCss);
+        string CustomCss,
+        string Nonce);
+
+    /// <summary>
+    /// Only scripts carrying the page nonce may run, so script tags, event-handler
+    /// attributes, and javascript: URLs in markdown are inert. Styles stay open
+    /// (custom CSS, Mermaid, and KaTeX all use inline styles, and custom CSS may
+    /// import web fonts) and images or media may come from anywhere, as markdown
+    /// expects.
+    /// </summary>
+    private static string ContentSecurityPolicy(string nonce) =>
+        $"default-src 'none'; script-src 'nonce-{nonce}'; style-src file: https: 'unsafe-inline'; " +
+        "img-src * data: blob: file:; media-src * data: blob: file:; font-src file: https: data:; " +
+        "frame-src https:; connect-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'";
+
+    public static string CreateNonce() =>
+        Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(18));
 
     public static string Build(Options options, string contentHtml)
     {
@@ -34,31 +50,34 @@ internal static class PreviewPage
             <html lang="en" data-theme="{theme}" data-mermaid-theme="{mermaidTheme}"{rootClass}>
             <head>
                 <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
             """);
 
         // Resolve relative links and images against the markdown file's folder,
-        // not the temp folder the page is loaded from
+        // not the temp folder the page is loaded from. It precedes the CSP, whose
+        // base-uri 'none' then rejects any <base> smuggled in through markdown.
         if (options.BaseDirectory != null)
         {
             var baseUri = new Uri(Path.TrimEndingDirectorySeparator(options.BaseDirectory) + Path.DirectorySeparatorChar).AbsoluteUri;
             html.Append($"    <base href=\"{WebUtility.HtmlEncode(baseUri)}\">\n");
         }
 
+        var nonce = options.Nonce;
         html.Append($"""
+                <meta http-equiv="Content-Security-Policy" content="{ContentSecurityPolicy(nonce)}">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <link rel="stylesheet" href="{AssetUrl("preview/preview.css")}">
                 <link rel="stylesheet" href="{AssetUrl($"libs/hljs/styles/{hljsTheme}.min.css")}">
                 <link rel="stylesheet" href="{AssetUrl("libs/katex/katex.min.css")}">
             {options.CustomCss}
                 <link rel="stylesheet" href="{AssetUrl("preview/print.css")}">
 
-                <script src="{AssetUrl("libs/mermaid.min.js")}"></script>
-                <script src="{AssetUrl("libs/hljs/highlight.min.js")}"></script>
-                <script src="{AssetUrl("libs/hljs/languages/sql.min.js")}"></script>
-                <script src="{AssetUrl("libs/hljs/languages/powershell.min.js")}"></script>
-                <script src="{AssetUrl("libs/hljs/languages/csharp.min.js")}"></script>
-                <script src="{AssetUrl("libs/katex/katex.min.js")}"></script>
+                <script nonce="{nonce}" src="{AssetUrl("libs/mermaid.min.js")}"></script>
+                <script nonce="{nonce}" src="{AssetUrl("libs/hljs/highlight.min.js")}"></script>
+                <script nonce="{nonce}" src="{AssetUrl("libs/hljs/languages/sql.min.js")}"></script>
+                <script nonce="{nonce}" src="{AssetUrl("libs/hljs/languages/powershell.min.js")}"></script>
+                <script nonce="{nonce}" src="{AssetUrl("libs/hljs/languages/csharp.min.js")}"></script>
+                <script nonce="{nonce}" src="{AssetUrl("libs/katex/katex.min.js")}"></script>
             </head>
             <body>
                 <article id="content" class="markdown-body">
@@ -92,7 +111,7 @@ internal static class PreviewPage
                     <div class="ctx-menu-item" id="ctxSelectAll">Select All<span class="shortcut">Ctrl+A</span></div>
                 </div>
 
-                <script src="{AssetUrl("preview/preview.js")}"></script>
+                <script nonce="{nonce}" src="{AssetUrl("preview/preview.js")}"></script>
             </body>
             </html>
             """);
