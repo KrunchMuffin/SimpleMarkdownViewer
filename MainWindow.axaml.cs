@@ -52,9 +52,16 @@ public partial class MainWindow : Window
     private bool _isDarkMode = false;
     private bool _showPreviewLineNumbers = false;
     private bool _webViewReady = false;
-    private string? _pendingHtml = null;
     private string? _welcomeTempHtmlPath;
     private int _renderVersion;
+
+    // Identifies the page the WebView has loaded, so re-renders of the same tab
+    // can swap content in place instead of reloading (keeps scroll, skips
+    // re-rendering unchanged diagrams)
+    private sealed record PreviewPageKey(TabState Tab, string FilePath, bool IsDarkMode, bool ShowLineNumbers, string CustomCss);
+    private PreviewPageKey? _loadedPageKey;
+    private int _readyRenderVersion = -1;
+    private const string NewFilePlaceholderHtml = "<p><em>Start typing in the editor...</em></p>";
     
     private readonly List<string> _recentFiles = new();
     private const int MaxRecentFiles = 10;
@@ -95,7 +102,7 @@ public partial class MainWindow : Window
         public string FilePath { get; set; } = "";
         public string FileName => IsNewFile ? (DisplayName ?? "Untitled") : Path.GetFileName(FilePath);
         public string TempHtmlPath { get; set; } = "";
-        public string? CachedHtml { get; set; }
+        public string? CachedBody { get; set; }
         public FileSystemWatcher? Watcher { get; set; }
         public CancellationTokenSource? WatcherDebounce;
         public Button? TabButton { get; set; }
@@ -575,9 +582,8 @@ public partial class MainWindow : Window
         if (_tabs.Count == 0)
         {
             _webViewReady = true;
-            RenderHtml(GetWelcomePage());
+            ShowWelcome();
         }
-
     }
 
     private void OnKeyDown(object? sender, KeyEventArgs e)
@@ -696,17 +702,7 @@ public partial class MainWindow : Window
         }
         catch { /* Ignore if not ready */ }
 
-        if (_pendingHtml != null)
-        {
-            RenderHtml(_pendingHtml);
-            _pendingHtml = null;
-        }
-        else if (_tabs.Count == 0)
-        {
-            // Show welcome page
-            RenderHtml(GetWelcomePage());
-        }
-
+        RefreshPreview();
     }
 
     private string GetWelcomePage()
@@ -797,6 +793,10 @@ public partial class MainWindow : Window
             case "toggle-edit":
                 OnToggleEditModeClick(null, null!);
                 break;
+            case "ready":
+                if (int.TryParse(GetQueryValue(uri, "v"), out var version))
+                    _readyRenderVersion = version;
+                break;
             case "open-link":
                 var target = GetQueryValue(uri, "url");
                 if (target != null)
@@ -859,17 +859,6 @@ public partial class MainWindow : Window
             catch { }
         }
         return "";
-    }
-
-    private string GetTemplate(TabState? tab)
-    {
-        var baseDirectory = tab != null && !tab.IsNewFile && !string.IsNullOrEmpty(tab.FilePath)
-            ? Path.GetDirectoryName(tab.FilePath)
-            : null;
-
-        return PreviewPage.Build(
-            new PreviewPage.Options(_isDarkMode, _showPreviewLineNumbers, _isEditMode, baseDirectory, GetCustomCssTag(), _pageNonce),
-            "{{CONTENT}}");
     }
 
     private async void OnOpenClick(object? sender, RoutedEventArgs e)
@@ -1118,23 +1107,8 @@ public partial class MainWindow : Window
         }
 
         // Load preview content
-        if (tab.CachedHtml != null)
-        {
-            if (_webViewReady)
-            {
-                RenderHtml(tab.CachedHtml);
-            }
-            else
-            {
-                _pendingHtml = tab.CachedHtml;
-            }
-        }
-        else if (tab.IsNewFile)
-        {
-            var template = GetTemplate(tab);
-            tab.CachedHtml = template.Replace("{{CONTENT}}", "<p><em>Start typing in the editor...</em></p>");
-            RenderHtml(tab.CachedHtml);
-        }
+        if (tab.CachedBody != null || tab.IsNewFile)
+            ShowTabPreview(tab);
 
         ScrollSelectedTabIntoView();
     }
@@ -1180,7 +1154,7 @@ public partial class MainWindow : Window
             _selectedTabIndex = -1;
             _statusText.Text = "Ready - Open a markdown or Mermaid file (Ctrl+O)";
             Title = "Simple Markdown Viewer";
-            RenderHtml(GetWelcomePage());
+            ShowWelcome();
 
             // Hide editor if no tabs
             if (_isEditMode)
@@ -1252,7 +1226,7 @@ public partial class MainWindow : Window
 
             LoadCurrentTabIntoEditor();
             _textEditor.Focus();
-
+            UpdatePreviewEditModeLabel();
         }
         else
         {
@@ -1269,14 +1243,14 @@ public partial class MainWindow : Window
             _editModeMenuItem.Header = "_Edit Mode";
             UpdateSaveMenuState();
 
-            // Re-render preview so CachedHtml gets the non-edit-mode template
+            // Render edits made since the last debounced preview update
             if (_selectedTabIndex >= 0 && _selectedTabIndex < _tabs.Count)
             {
                 var tab = _tabs[_selectedTabIndex];
                 var content = tab.EditContent ?? "";
-                tab.CachedHtml = await BuildHtmlForTabAsync(tab, content);
+                tab.CachedBody = await BuildBodyForTabAsync(tab, content);
                 if (_selectedTabIndex >= 0 && _tabs[_selectedTabIndex] == tab)
-                    RenderHtml(tab.CachedHtml);
+                    ShowTabPreview(tab);
             }
         }
     }
@@ -1347,12 +1321,12 @@ public partial class MainWindow : Window
 
         try
         {
-            var html = await BuildHtmlForTabAsync(tab, content);
+            var body = await BuildBodyForTabAsync(tab, content);
             if (requestId != _editorRenderRequestId || _selectedTabIndex < 0 || _tabs[_selectedTabIndex] != tab)
                 return;
 
-            tab.CachedHtml = html;
-            RenderHtml(tab.CachedHtml);
+            tab.CachedBody = body;
+            ShowTabPreview(tab);
         }
         catch (Exception ex)
         {
@@ -1548,11 +1522,6 @@ public partial class MainWindow : Window
 
         SelectTab(_tabs.Count - 1);
 
-        // Show empty preview
-        var template = GetTemplate(tab);
-        tab.CachedHtml = template.Replace("{{CONTENT}}", "<p><em>Start typing in the editor...</em></p>");
-        RenderHtml(tab.CachedHtml);
-
         _textEditor.Focus();
     }
 
@@ -1665,8 +1634,7 @@ public partial class MainWindow : Window
             else if (!tab.IsNewFile)
             {
                 await GenerateHtml(tab, forceDiskReload: true);
-                if (tab.CachedHtml != null)
-                    RenderHtml(tab.CachedHtml);
+                ShowTabPreview(tab);
             }
         }
     }
@@ -1734,7 +1702,7 @@ public partial class MainWindow : Window
         await dialog.ShowDialog(this);
     }
 
-    private async void OnToggleThemeClick(object? sender, RoutedEventArgs e)
+    private void OnToggleThemeClick(object? sender, RoutedEventArgs e)
     {
         _isDarkMode = !_isDarkMode;
         ApplyTheme();
@@ -1742,12 +1710,6 @@ public partial class MainWindow : Window
 
         // Update editor theme
         SetupTextMateTheme();
-
-        // Regenerate all tabs with new theme
-        foreach (var tab in _tabs)
-        {
-            await GenerateHtml(tab);
-        }
 
         // Update tab button colors and text
         for (int i = 0; i < _tabs.Count; i++)
@@ -1766,17 +1728,8 @@ public partial class MainWindow : Window
             }
         }
 
-        // Re-render current tab or welcome page
-        if (_selectedTabIndex >= 0 && _selectedTabIndex < _tabs.Count)
-        {
-            var tab = _tabs[_selectedTabIndex];
-            if (tab.CachedHtml != null)
-                RenderHtml(tab.CachedHtml);
-        }
-        else
-        {
-            RenderHtml(GetWelcomePage());
-        }
+        // Reload the page shell for the new theme
+        RefreshPreview();
     }
 
     private async void OnToggleLineNumbersClick(object? sender, RoutedEventArgs e)
@@ -1785,23 +1738,13 @@ public partial class MainWindow : Window
         _lineNumbersMenuItem.Header = _showPreviewLineNumbers ? "Hide Preview _Line Numbers" : "Preview _Line Numbers";
         SaveSettings();
 
-        // Regenerate all tabs with updated template
+        // Line numbers are data attributes in the rendered markdown, so every tab re-renders
         foreach (var tab in _tabs)
         {
             await GenerateHtml(tab);
         }
 
-        // Re-render current tab
-        if (_selectedTabIndex >= 0 && _selectedTabIndex < _tabs.Count)
-        {
-            var tab = _tabs[_selectedTabIndex];
-            if (tab.CachedHtml != null)
-                RenderHtml(tab.CachedHtml);
-        }
-        else
-        {
-            RenderHtml(GetWelcomePage());
-        }
+        RefreshPreview();
     }
 
     private void OnOpenCustomCssClick(object? sender, RoutedEventArgs e)
@@ -1982,7 +1925,7 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
         var content = await ReadFileWithRetryAsync(tab.FilePath);
 
         // Our own saves and duplicate events land here with nothing new to show
-        if (tab.CachedHtml != null && tab.HasLoadedEditor && content == tab.OriginalContent)
+        if (tab.CachedBody != null && tab.HasLoadedEditor && content == tab.OriginalContent)
             return;
 
         // Keep the editor copy in sync even when edit mode is off, otherwise a later
@@ -2000,9 +1943,9 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
             }
         }
 
-        tab.CachedHtml = await BuildHtmlForTabAsync(tab, content);
+        tab.CachedBody = await BuildBodyForTabAsync(tab, content);
         if (_tabs.IndexOf(tab) == _selectedTabIndex)
-            RenderHtml(tab.CachedHtml);
+            ShowTabPreview(tab);
     }
 
     private static async Task<string> ReadFileWithRetryAsync(string path)
@@ -2192,13 +2135,6 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
         return htmlContent;
     }
 
-    private string BuildHtmlFromMarkdown(TabState tab, string markdown)
-    {
-        var htmlContent = ConvertMarkdownToHtml(markdown);
-        var template = GetTemplate(tab);
-        return template.Replace("{{CONTENT}}", htmlContent);
-    }
-
     private static string WrapMermaidSource(string source)
     {
         return $"```mermaid\n{source.TrimEnd('\r', '\n')}\n```";
@@ -2213,21 +2149,21 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
             || content.Contains("~~~mermaid", StringComparison.OrdinalIgnoreCase);
     }
 
-    private string BuildHtmlForTab(TabState tab, string content)
+    private string BuildBodyForTab(TabState tab, string content)
     {
         var markdown = IsMermaidFile(tab.FilePath) && !LooksLikeMarkdownDocument(content)
             ? WrapMermaidSource(content)
             : content;
-        return BuildHtmlFromMarkdown(tab, markdown);
+        return ConvertMarkdownToHtml(markdown);
     }
 
-    private Task<string> BuildHtmlForTabAsync(TabState tab, string content)
+    private Task<string> BuildBodyForTabAsync(TabState tab, string content)
     {
         return Task.Run(() =>
         {
             lock (_markdownRenderLock)
             {
-                return BuildHtmlForTab(tab, content);
+                return BuildBodyForTab(tab, content);
             }
         });
     }
@@ -2241,11 +2177,11 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
                 ? tab.EditContent
                 : await File.ReadAllTextAsync(tab.FilePath, Encoding.UTF8);
 
-            tab.CachedHtml = await BuildHtmlForTabAsync(tab, markdown);
+            tab.CachedBody = await BuildBodyForTabAsync(tab, markdown);
         }
         catch (Exception ex)
         {
-            tab.CachedHtml = $"<html><head><meta charset=\"UTF-8\"></head><body><h1>Error</h1><p>{System.Net.WebUtility.HtmlEncode(ex.Message)}</p></body></html>";
+            tab.CachedBody = $"<h1>Error</h1><p>{System.Net.WebUtility.HtmlEncode(ex.Message)}</p>";
         }
     }
 
@@ -2283,9 +2219,9 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
                 _textEditor.TextChanged += OnEditorTextChanged;
             }
 
-            tab.CachedHtml = await BuildHtmlForTabAsync(tab, content);
+            tab.CachedBody = await BuildBodyForTabAsync(tab, content);
             if (_tabs.IndexOf(tab) == _selectedTabIndex)
-                RenderHtml(tab.CachedHtml);
+                ShowTabPreview(tab);
 
             _statusText.Text = $"Reloaded: {tab.FilePath}";
             return true;
@@ -2297,17 +2233,78 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
         }
     }
 
-    private async void RenderHtml(string html)
+    private void RefreshPreview()
     {
+        if (_selectedTabIndex >= 0 && _selectedTabIndex < _tabs.Count)
+            ShowTabPreview(_tabs[_selectedTabIndex]);
+        else
+            ShowWelcome();
+    }
+
+    private void ShowWelcome()
+    {
+        // OnWebViewCreated calls RefreshPreview once the WebView is up
         if (!_webViewReady)
-        {
-            _pendingHtml = html;
             return;
+
+        _welcomeTempHtmlPath ??= Path.Combine(Path.GetTempPath(), $"mdviewer_welcome_{Guid.NewGuid():N}.html");
+        _loadedPageKey = null;
+        NavigateToPage(_welcomeTempHtmlPath, GetWelcomePage());
+    }
+
+    private async void ShowTabPreview(TabState tab)
+    {
+        // OnWebViewCreated calls RefreshPreview once the WebView is up
+        if (!_webViewReady)
+            return;
+
+        var body = tab.CachedBody ?? (tab.IsNewFile ? NewFilePlaceholderHtml : "");
+        var customCss = GetCustomCssTag();
+        var key = new PreviewPageKey(tab, tab.FilePath, _isDarkMode, _showPreviewLineNumbers, customCss);
+
+        // Same page already loaded: swap the content in place
+        if (key == _loadedPageKey && _readyRenderVersion == _renderVersion)
+        {
+            try
+            {
+                var script = $"(function () {{ window.mdviewer.setEditMode({(_isEditMode ? "true" : "false")}); " +
+                             $"return window.mdviewer.setContent({JsonSerializer.Serialize(body)}); }})()";
+                var result = await _webView.ExecuteScriptAsync(script);
+                if (result?.Trim() == "true")
+                    return;
+            }
+            catch { /* fall back to a full reload */ }
+
+            // The page moved on while we awaited; a newer render owns it now
+            if (_loadedPageKey != key)
+                return;
         }
 
+        var baseDirectory = !tab.IsNewFile && !string.IsNullOrEmpty(tab.FilePath)
+            ? Path.GetDirectoryName(tab.FilePath)
+            : null;
+        var html = PreviewPage.Build(
+            new PreviewPage.Options(_isDarkMode, _showPreviewLineNumbers, _isEditMode, baseDirectory, customCss, _pageNonce),
+            body);
+
+        _loadedPageKey = key;
+        NavigateToPage(tab.TempHtmlPath, html);
+    }
+
+    private void UpdatePreviewEditModeLabel()
+    {
+        if (!_webViewReady) return;
         try
         {
-            var tempPath = GetCurrentRenderPath();
+            _ = _webView.ExecuteScriptAsync($"window.mdviewer && window.mdviewer.setEditMode({(_isEditMode ? "true" : "false")});");
+        }
+        catch { }
+    }
+
+    private async void NavigateToPage(string tempPath, string html)
+    {
+        try
+        {
             File.WriteAllText(tempPath, html, new UTF8Encoding(true));
             var renderVersion = Interlocked.Increment(ref _renderVersion);
             var uriBuilder = new UriBuilder(new Uri(tempPath))
@@ -2316,17 +2313,9 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
             };
             _webView.Url = uriBuilder.Uri;
 
-            // After navigation, manage focus and sync context menu
+            // Navigation takes focus; hand it back to the editor
             await Task.Delay(100);
-            if (renderVersion != _renderVersion)
-                return;
-
-            try
-            {
-                await _webView.ExecuteScriptAsync($"window.mdviewer && window.mdviewer.setEditMode({(_isEditMode ? "true" : "false")});");
-            }
-            catch { }
-            if (_isEditMode)
+            if (renderVersion == _renderVersion && _isEditMode)
                 _textEditor.Focus();
         }
         catch (Exception ex)
@@ -2334,16 +2323,6 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
             _statusText.Text = $"Render error: {ex.Message}";
         }
     }
-
-    private string GetCurrentRenderPath()
-    {
-        if (_selectedTabIndex >= 0 && _selectedTabIndex < _tabs.Count)
-            return _tabs[_selectedTabIndex].TempHtmlPath;
-
-        _welcomeTempHtmlPath ??= Path.Combine(Path.GetTempPath(), $"mdviewer_welcome_{Guid.NewGuid():N}.html");
-        return _welcomeTempHtmlPath;
-    }
-
 
     private string PreprocessMarkdown(string markdown)
     {

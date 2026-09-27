@@ -16,7 +16,13 @@
     let isDragging = false;
     let dragStartX = 0, dragStartY = 0;
     let panStartX = 0, panStartY = 0;
-    let contentRendered = false;
+
+    // Bumped whenever the content is replaced so in-flight diagram rendering stops
+    let renderGeneration = 0;
+
+    // Mermaid source -> rendered SVG markup, so incremental updates only
+    // re-render diagrams whose source actually changed
+    let diagramCache = new Map();
 
     function escapeHtml(value) {
         const div = document.createElement('div');
@@ -29,13 +35,31 @@
         window.location.href = 'app://' + command + '?' + query;
     }
 
-    async function renderMermaidDiagrams() {
+    function reuseCachedDiagrams() {
+        const previous = diagramCache;
+        diagramCache = new Map();
+        document.querySelectorAll('#content .mermaid').forEach((el) => {
+            const source = el.textContent;
+            el.dataset.source = source;
+            const svg = previous.get(source);
+            if (svg !== undefined && !diagramCache.has(source)) {
+                el.innerHTML = svg;
+                el.setAttribute('data-processed', 'true');
+                diagramCache.set(source, svg);
+            }
+        });
+    }
+
+    async function renderMermaidDiagrams(generation) {
         const diagrams = Array.from(document.querySelectorAll('.mermaid:not(.mermaid-error):not([data-processed])'))
             .filter(el => !el.querySelector('svg'));
 
         for (const el of diagrams) {
+            if (generation !== renderGeneration) return;
+            const source = el.dataset.source !== undefined ? el.dataset.source : el.textContent;
             try {
                 await mermaid.run({ nodes: [el] });
+                diagramCache.set(source, el.innerHTML);
             } catch (e) {
                 const message = (e && (e.message || e.str || e.toString())) || 'Unknown Mermaid error';
                 console.error('Mermaid render error:', e);
@@ -72,17 +96,10 @@
     }
 
     function renderContent() {
-        if (contentRendered) return;
-        contentRendered = true;
+        const generation = ++renderGeneration;
 
-        mermaid.initialize({
-            startOnLoad: false,
-            theme: root.dataset.mermaidTheme || 'default',
-            // strict: diagram labels are escaped and click directives are ignored
-            securityLevel: 'strict'
-        });
-
-        renderMermaidDiagrams().then(attachMermaidFullscreenHandlers);
+        reuseCachedDiagrams();
+        renderMermaidDiagrams(generation).then(attachMermaidFullscreenHandlers);
 
         document.querySelectorAll('pre code').forEach((block) => {
             if (!block.closest('.mermaid')) hljs.highlightElement(block);
@@ -93,6 +110,22 @@
             renderMath('.math-display', true);
             renderMath('.math-inline', false);
         }
+    }
+
+    function initialize() {
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: root.dataset.mermaidTheme || 'default',
+            // strict: diagram labels are escaped and click directives are ignored
+            securityLevel: 'strict'
+        });
+
+        renderContent();
+
+        // Tell the host which render this page belongs to, so it only pushes
+        // incremental updates into a page that has finished loading
+        const version = new URLSearchParams(window.location.search).get('v');
+        if (version) sendToHost('ready', { v: version });
     }
 
     // ---- Diagram fullscreen viewer ----
@@ -302,16 +335,24 @@
     document.addEventListener('click', handleLinkClick, true);
     document.addEventListener('auxclick', handleLinkClick, true);
 
-    // The host updates the context menu label after edit mode toggles
+    // Host API, called via ExecuteScriptAsync
     window.mdviewer = {
+        // Replace the rendered markdown without reloading the page, keeping
+        // scroll position and unchanged diagrams
+        setContent(html) {
+            closeFullscreen();
+            document.getElementById('content').innerHTML = html;
+            renderContent();
+            return true;
+        },
         setEditMode(isEditMode) {
             document.getElementById('ctxEdit').childNodes[0].textContent = isEditMode ? 'Exit Edit Mode' : 'Edit';
         }
     };
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', renderContent);
+        document.addEventListener('DOMContentLoaded', initialize);
     } else {
-        renderContent();
+        initialize();
     }
 })();
