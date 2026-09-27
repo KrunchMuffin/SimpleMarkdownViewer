@@ -59,8 +59,11 @@
             const source = el.dataset.source !== undefined ? el.dataset.source : el.textContent;
             try {
                 await mermaid.run({ nodes: [el] });
+                // Content was replaced while rendering; this element is gone
+                if (generation !== renderGeneration) return;
                 diagramCache.set(source, el.innerHTML);
             } catch (e) {
+                if (generation !== renderGeneration) return;
                 const message = (e && (e.message || e.str || e.toString())) || 'Unknown Mermaid error';
                 console.error('Mermaid render error:', e);
                 el.classList.add('mermaid-error');

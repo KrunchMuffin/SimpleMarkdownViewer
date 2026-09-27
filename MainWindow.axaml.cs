@@ -109,7 +109,7 @@ public partial class MainWindow : Window
 
         // Edit mode fields
         public bool IsModified { get; set; }
-        public string OriginalContent { get; set; } = "";
+        public string OriginalContent { get; set; } = "";  // last content read from or saved to disk
         public string EditContent { get; set; } = "";
         public bool HasLoadedEditor { get; set; }
         public bool IsNewFile { get; set; }
@@ -1923,14 +1923,15 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
         var content = await ReadFileWithRetryAsync(tab.FilePath);
 
         // Our own saves and duplicate events land here with nothing new to show
-        if (tab.CachedBody != null && tab.HasLoadedEditor && content == tab.OriginalContent)
+        if (tab.CachedBody != null && content == tab.OriginalContent)
             return;
+
+        tab.OriginalContent = content;
 
         // Keep the editor copy in sync even when edit mode is off, otherwise a later
         // re-render (theme toggle etc.) would bring back the stale text
         if (tab.HasLoadedEditor)
         {
-            tab.OriginalContent = content;
             tab.EditContent = content;
 
             if (_isEditMode && _tabs.IndexOf(tab) == _selectedTabIndex)
@@ -1989,6 +1990,8 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
             var markdown = renderFromEditor
                 ? tab.EditContent
                 : await File.ReadAllTextAsync(tab.FilePath, Encoding.UTF8);
+            if (!renderFromEditor && !tab.HasLoadedEditor)
+                tab.OriginalContent = markdown;
 
             tab.CachedBody = await BuildBodyForTabAsync(tab, markdown);
         }
@@ -2080,7 +2083,9 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
         {
             try
             {
-                var script = $"(function () {{ window.mdviewer.setEditMode({(_isEditMode ? "true" : "false")}); " +
+                // The version check makes the update a no-op if a newer page loaded meanwhile
+                var script = $"(function () {{ if (new URLSearchParams(location.search).get('v') !== '{_renderVersion}') return false; " +
+                             $"window.mdviewer.setEditMode({(_isEditMode ? "true" : "false")}); " +
                              $"return window.mdviewer.setContent({JsonSerializer.Serialize(body)}); }})()";
                 var result = await _webView.InvokeScript(script);
                 if (result?.Trim() == "true")
