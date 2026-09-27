@@ -2,7 +2,7 @@
 ; Download Inno Setup from: https://jrsoftware.org/isinfo.php
 
 #define MyAppName "Simple Markdown Viewer"
-#define MyAppVersion "1.4.1"
+#define MyAppVersion "1.5.0"
 #define MyAppPublisher "DAB Worx Inc."
 #define MyAppURL "https://github.com/KrunchMuffin/SimpleMarkdownViewer"
 #define MyAppExeName "SimpleMarkdownViewer.exe"
@@ -37,6 +37,15 @@ Name: "fileassoc_common"; Description: "Common extensions (.md, .markdown)"; Gro
 Name: "fileassoc_extended"; Description: "Extended extensions (.mdown, .mkd, .mkdn, .mdwn, .mdtxt, .mdtext)"; GroupDescription: "File associations:"
 Name: "fileassoc_special"; Description: "Specialized extensions (.mdx, .rmd)"; GroupDescription: "File associations:"; Flags: unchecked
 Name: "fileassoc_mermaid"; Description: "Mermaid extensions (.mmd, .mermaid)"; GroupDescription: "File associations:"
+
+[InstallDelete]
+; Clear files from previous versions so removed dependencies don't linger after an upgrade
+Type: files; Name: "{app}\*.dll"
+Type: files; Name: "{app}\*.pdb"
+Type: files; Name: "{app}\*.json"
+Type: filesandordirs; Name: "{app}\Assets"
+; Versions before 1.5.0 kept the WebView2 browser profile beside the exe
+Type: filesandordirs; Name: "{app}\SimpleMarkdownViewer.exe.WebView2"
 
 [Files]
 Source: "publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs

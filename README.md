@@ -40,7 +40,7 @@ A lightweight, fast markdown and Mermaid viewer built with Avalonia UI.
 
 ### Prerequisites
 
-- [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- [.NET 10.0 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 
 ### Clone and Build
 
@@ -104,7 +104,7 @@ To unregister, run `unregister-file-association.reg`.
 ## Tech Stack
 
 - [Avalonia UI](https://avaloniaui.net/) - Cross-platform .NET UI framework
-- [WebView.Avalonia](https://github.com/AvaloniaCommunity/WebView.Avalonia) - Cross-platform web view
+- [Avalonia WebView](https://github.com/AvaloniaUI/Avalonia.Controls.WebView) - Native web view (WebView2 / WKWebView / WebKitGTK)
 - [Markdig](https://github.com/xoofx/markdig) - Markdown parser
 - [highlight.js](https://highlightjs.org/) - Syntax highlighting
 - [Mermaid](https://mermaid.js.org/) - Diagrams

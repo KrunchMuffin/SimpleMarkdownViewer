@@ -2,45 +2,51 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app-icon.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <LangVersion>latest</LangVersion>
-    <Version>1.4.1</Version>
-    <AssemblyVersion>1.4.1.0</AssemblyVersion>
-    <FileVersion>1.4.1.0</FileVersion>
+    <Version>1.5.0</Version>
+    <AssemblyVersion>1.5.0.0</AssemblyVersion>
+    <FileVersion>1.5.0.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="11.3.12" />
-    <PackageReference Include="Avalonia.Desktop" Version="11.3.12" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.12" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.12" />
-    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.12" Condition="'$(Configuration)' == 'Debug'" />
+    <PackageReference Include="Avalonia" Version="12.1.3" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.3" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.3" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.3" />
 
     <!-- WebView -->
-    <PackageReference Include="WebView.Avalonia" Version="11.0.0.1" />
-    <PackageReference Include="WebView.Avalonia.Desktop" Version="11.0.0.1" />
+    <PackageReference Include="Avalonia.Controls.WebView" Version="12.1.0" />
 
     <!-- Markdown parsing -->
-    <PackageReference Include="Markdig" Version="0.45.0" />
-    <PackageReference Include="WebView.Avalonia.Windows" Version="11.0.0.1" />
+    <PackageReference Include="Markdig" Version="1.4.0" />
 
     <!-- Code editor -->
-    <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.4.1" />
-    <PackageReference Include="AvaloniaEdit.TextMate" Version="11.3.0" />
-    <PackageReference Include="TextMateSharp.Grammars" Version="1.0.65" />
+    <PackageReference Include="Avalonia.AvaloniaEdit" Version="12.0.0" />
+    <PackageReference Include="AvaloniaEdit.TextMate" Version="12.0.0" />
+    <PackageReference Include="TextMateSharp.Grammars" Version="2.0.4" />
   </ItemGroup>
 
   <ItemGroup>
-    <AvaloniaResource Include="Assets\**" Exclude="Assets\libs\**" />
-    <!-- Bundled JS/CSS libraries (avoids CDN tracking prevention blocks) -->
-    <Content Include="Assets\libs\**">
+    <AvaloniaResource Include="Assets\**" Exclude="Assets\libs\**;Assets\preview\**" />
+    <!-- Bundled JS/CSS libraries (avoids CDN tracking prevention blocks) and preview page assets -->
+    <Content Include="Assets\libs\**;Assets\preview\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+
+  <!-- SkiaSharp/HarfBuzzSharp ship ~100 MB of native debug symbols; keep them out of
+       publish output (and so the installer). Our own .pdb stays for stack traces. -->
+  <Target Name="ExcludeDependencyPdbsFromPublish" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+                             Condition="'%(Extension)' == '.pdb' And '%(Filename)' != '$(AssemblyName)'" />
+    </ItemGroup>
+  </Target>
 
 </Project>

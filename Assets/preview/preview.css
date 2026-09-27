@@ -1,0 +1,296 @@
+/* Built-in preview styles. Theme colors are CSS variables so light and dark
+   share one stylesheet; the host sets data-theme on <html>. User overrides
+   (custom-dark.css / custom-light.css) are injected after this file. */
+
+:root {
+    --bg: #ffffff;
+    --text: #24292f;
+    --code-bg: #f6f8fa;
+    --border: #d0d7de;
+    --link: #0969da;
+    --muted: #656d76;
+    --heading: #1f2328;
+    --menu-bg: #ffffff;
+    --menu-hover: #f0f0f0;
+}
+
+:root[data-theme="dark"] {
+    --bg: #0d1117;
+    --text: #e6edf3;
+    --code-bg: #161b22;
+    --border: #30363d;
+    --link: #58a6ff;
+    --muted: #8b949e;
+    --heading: #e6edf3;
+    --menu-bg: #2d2d2d;
+    --menu-hover: #3a3a3a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--text);
+    background-color: var(--bg);
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 32px;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    color: var(--heading);
+    margin-top: 24px;
+    margin-bottom: 16px;
+    font-weight: 600;
+    line-height: 1.25;
+}
+
+h1 { font-size: 2em; padding-bottom: 0.3em; border-bottom: 1px solid var(--border); }
+h2 { font-size: 1.5em; padding-bottom: 0.3em; border-bottom: 1px solid var(--border); }
+h3 { font-size: 1.25em; }
+
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+code {
+    font-family: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
+    font-size: 85%;
+    background-color: var(--code-bg);
+    padding: 0.2em 0.4em;
+    border-radius: 6px;
+}
+
+pre {
+    background-color: var(--code-bg);
+    padding: 16px;
+    border-radius: 6px;
+    overflow-x: auto;
+}
+
+pre code {
+    background-color: transparent;
+    padding: 0;
+    font-size: 100%;
+}
+
+table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+th, td { border: 1px solid var(--border); padding: 8px 13px; text-align: left; }
+th { background-color: var(--code-bg); font-weight: 600; }
+
+blockquote {
+    margin: 16px 0;
+    padding: 0 1em;
+    color: var(--muted);
+    border-left: 4px solid var(--border);
+}
+
+ul, ol { padding-left: 2em; margin: 16px 0; }
+
+.task-list-item { list-style-type: none; margin-left: -1.5em; }
+.task-list-item input { margin-right: 0.5em; }
+
+img { max-width: 100%; height: auto; }
+
+hr { border: 0; height: 1px; background-color: var(--border); margin: 24px 0; }
+
+.mermaid {
+    text-align: center;
+    margin: 16px 0;
+    cursor: pointer;
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    transition: box-shadow 0.2s, transform 0.3s, top 0.3s, left 0.3s, width 0.3s, height 0.3s;
+}
+.mermaid:hover {
+    box-shadow: 0 0 8px color-mix(in srgb, var(--link) 25%, transparent);
+}
+.mermaid::after {
+    content: '🔍 Click to expand';
+    position: absolute;
+    top: 4px;
+    right: 8px;
+    font-size: 11px;
+    color: var(--muted);
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+.mermaid:hover::after {
+    opacity: 1;
+}
+.mermaid svg {
+    max-width: 100%;
+    height: auto;
+}
+.mermaid-error {
+    cursor: default;
+    text-align: left;
+    border-color: #d73a49;
+}
+.mermaid-error::after {
+    display: none;
+}
+.mermaid-error strong {
+    color: #d73a49;
+}
+.mermaid-error pre {
+    margin-bottom: 0;
+    white-space: pre-wrap;
+}
+
+/* Fullscreen mode for diagrams */
+.mermaid.fullscreen {
+    position: fixed !important;
+    top: 60px !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: calc(100vh - 60px) !important;
+    z-index: 10000 !important;
+    background: var(--bg) !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    border: none !important;
+    padding: 20px !important;
+    overflow: auto !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+.mermaid.fullscreen::after {
+    display: none;
+}
+.mermaid.fullscreen svg {
+    max-width: none !important;
+    max-height: none !important;
+    transform-origin: center center;
+}
+
+/* Fullscreen controls bar */
+.fullscreen-controls {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 60px;
+    background: var(--code-bg);
+    border-bottom: 1px solid var(--border);
+    z-index: 10001;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+}
+.fullscreen-controls.active {
+    display: flex;
+}
+.fullscreen-controls-title {
+    font-weight: 600;
+    color: var(--heading);
+}
+.fullscreen-controls-buttons {
+    display: flex;
+    gap: 8px;
+}
+.fullscreen-controls button {
+    padding: 8px 16px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 14px;
+}
+.fullscreen-controls button:hover {
+    background: var(--border);
+}
+
+/* Overlay behind fullscreen diagram */
+.fullscreen-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: var(--bg);
+    z-index: 9999;
+}
+.fullscreen-overlay.active {
+    display: block;
+}
+
+kbd {
+    display: inline-block;
+    padding: 3px 5px;
+    font-size: 11px;
+    color: var(--text);
+    background-color: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+
+/* Custom context menu */
+.ctx-menu {
+    display: none;
+    position: fixed;
+    z-index: 20000;
+    background: var(--menu-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    padding: 4px 0;
+    min-width: 160px;
+    font-size: 13px;
+}
+.ctx-menu.active { display: block; }
+.ctx-menu-item {
+    padding: 6px 16px;
+    cursor: pointer;
+    color: var(--text);
+    display: flex;
+    justify-content: space-between;
+}
+.ctx-menu-item:hover {
+    background: var(--menu-hover);
+}
+.ctx-menu-item .shortcut {
+    color: var(--muted);
+    margin-left: 24px;
+    font-size: 12px;
+}
+.ctx-menu-sep {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0;
+}
+
+/* Preview line numbers (View > Preview Line Numbers) */
+:root.line-numbers #content [data-line] {
+    position: relative;
+    padding-left: 3.5em;
+}
+:root.line-numbers #content [data-line]::before {
+    content: attr(data-line);
+    position: absolute;
+    left: 0;
+    width: 2.5em;
+    text-align: right;
+    color: var(--muted);
+    font-size: 12px;
+    font-family: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
+    line-height: inherit;
+    padding-top: 0.15em;
+    opacity: 0.6;
+    border-right: 1px solid var(--border);
+    padding-right: 0.5em;
+}
+/* Prevent nested containers from double-indenting */
+:root.line-numbers #content [data-line] [data-line] {
+    padding-left: 0;
+}
+:root.line-numbers #content [data-line] [data-line]::before {
+    left: -3.5em;
+}

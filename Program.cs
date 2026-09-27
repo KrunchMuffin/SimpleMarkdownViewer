@@ -3,7 +3,6 @@ using System.IO;
 using System.IO.Pipes;
 using System.Threading;
 using Avalonia;
-using Avalonia.WebView.Desktop;
 
 namespace SimpleMarkdownViewer;
 
@@ -43,6 +42,5 @@ class Program
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()
             .WithInterFont()
-            .LogToTrace()
-            .UseDesktopWebView();
+            .LogToTrace();
 }
