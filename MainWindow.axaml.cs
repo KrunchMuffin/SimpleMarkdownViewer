@@ -82,6 +82,7 @@ public partial class MainWindow : Window
     private TextMate.Installation? _textMateInstallation;
     private Timer? _previewDebounceTimer;
     private const int PreviewDebounceMs = 300;
+    private const int WatcherDebounceMs = 250;
     private int _untitledCounter;
     private int _editorRenderRequestId;
 
@@ -95,6 +96,7 @@ public partial class MainWindow : Window
         public string TempHtmlPath { get; set; } = "";
         public string? CachedHtml { get; set; }
         public FileSystemWatcher? Watcher { get; set; }
+        public CancellationTokenSource? WatcherDebounce;
         public Button? TabButton { get; set; }
         public TextBlock? TabText { get; set; }
 
@@ -310,6 +312,27 @@ public partial class MainWindow : Window
 
         // Start named pipe server for single-instance file opening
         StartPipeServer();
+
+        _ = Task.Run(DeleteOrphanedTempFiles);
+    }
+
+    private static void DeleteOrphanedTempFiles()
+    {
+        // Preview files are normally removed on close; a crash or kill leaves them behind
+        try
+        {
+            var cutoff = DateTime.Now.AddDays(-1);
+            foreach (var path in Directory.EnumerateFiles(Path.GetTempPath(), "mdviewer_*.html"))
+            {
+                try
+                {
+                    if (File.GetLastWriteTime(path) < cutoff)
+                        File.Delete(path);
+                }
+                catch { }
+            }
+        }
+        catch { }
     }
 
     private void StartPipeServer()
@@ -720,35 +743,100 @@ public partial class MainWindow : Window
     {
         var url = e.Url?.ToString() ?? "";
 
-        // Handle app:// commands from JavaScript context menu
+        // Handle app:// commands from the preview's JavaScript (context menu, link clicks)
         if (url.StartsWith("app://", StringComparison.OrdinalIgnoreCase))
         {
             e.Cancel = true;
-            if (url.Contains("toggle-edit"))
-            {
-                Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                    OnToggleEditModeClick(null, null!));
-            }
+            Dispatcher.UIThread.Post(() => HandleAppCommand(url));
+            return;
+        }
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return;
+
+        // Never let the preview itself navigate to the web; link clicks are routed
+        // through app://open-link so only user-initiated clicks open a browser
+        if (uri.Scheme is "http" or "https")
+        {
+            e.Cancel = true;
             return;
         }
 
         // Check if this is a file being dragged onto WebView
-        if (Uri.TryCreate(url, UriKind.Absolute, out var fileUri) && fileUri.IsFile)
+        if (uri.IsFile)
         {
-            var filePath = fileUri.LocalPath;
-            
+            var filePath = uri.LocalPath;
+
             // Skip our own temp HTML files
             if (filePath.Contains("mdviewer_") && filePath.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
                 return;
-            
+
             if (IsSupportedDocumentFile(filePath) && File.Exists(filePath))
             {
                 // Cancel the WebView navigation
                 e.Cancel = true;
-                
+
                 // Open in a new tab instead
                 _ = OpenFileInNewTab(filePath);
             }
+        }
+    }
+
+    private void HandleAppCommand(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return;
+
+        switch (uri.Host.ToLowerInvariant())
+        {
+            case "toggle-edit":
+                OnToggleEditModeClick(null, null!);
+                break;
+            case "open-link":
+                var target = GetQueryValue(uri, "url");
+                if (target != null)
+                    OpenLink(target);
+                break;
+        }
+    }
+
+    private static string? GetQueryValue(Uri uri, string key)
+    {
+        foreach (var pair in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = pair.Split('=', 2);
+            if (parts.Length == 2 && parts[0] == key)
+                return Uri.UnescapeDataString(parts[1]);
+        }
+        return null;
+    }
+
+    private void OpenLink(string target)
+    {
+        if (!Uri.TryCreate(target, UriKind.Absolute, out var uri))
+            return;
+
+        if (uri.Scheme is "http" or "https" or "mailto")
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = uri.AbsoluteUri, UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                _statusText.Text = $"Could not open link: {ex.Message}";
+            }
+            return;
+        }
+
+        if (uri.IsFile)
+        {
+            // Only open documents we can display; never shell-execute arbitrary local files from a link
+            var path = uri.LocalPath;
+            if (IsSupportedDocumentFile(path) && File.Exists(path))
+                _ = OpenFileInNewTab(path);
+            else
+                _statusText.Text = $"Link target not opened: {path}";
         }
     }
 
@@ -1442,6 +1530,25 @@ public partial class MainWindow : Window
             }});
         }})();
 
+        // Route link clicks through the host so the preview never navigates away
+        function handleLinkClick(e) {{
+            const a = e.target.closest && e.target.closest('a[href]');
+            if (!a || (e.type === 'auxclick' && e.button !== 1)) return;
+            const raw = a.getAttribute('href') || '';
+            e.preventDefault();
+            if (raw.startsWith('#')) {{
+                const id = decodeURIComponent(raw.slice(1));
+                const target = document.getElementById(id) || document.getElementsByName(id)[0];
+                if (target) target.scrollIntoView();
+                return;
+            }}
+            if (/^(https?|mailto|file):/i.test(a.href)) {{
+                window.location.href = 'app://open-link?url=' + encodeURIComponent(a.href);
+            }}
+        }}
+        document.addEventListener('click', handleLinkClick, true);
+        document.addEventListener('auxclick', handleLinkClick, true);
+
         document.addEventListener('DOMContentLoaded', renderContent);
     </script>
 </body>
@@ -1496,12 +1603,10 @@ public partial class MainWindow : Window
                 return;
             }
             
-            // Create a temp file with the clipboard content
-            var tempPath = Path.Combine(Path.GetTempPath(), $"Clipboard_{DateTime.Now:yyyyMMdd_HHmmss}.md");
-            await File.WriteAllTextAsync(tempPath, text, new UTF8Encoding(true));
-
-            // Open it in a new tab
-            await OpenFileInNewTab(tempPath);
+            // Open as an untitled document; Save prompts for a location
+            var tab = CreateUntitledTab("Clipboard", text);
+            await GenerateHtml(tab);
+            SelectTab(_tabs.IndexOf(tab));
             _statusText.Text = $"Opened markdown from clipboard ({text.Length} chars)";
         }
         catch (Exception ex)
@@ -1741,6 +1846,7 @@ public partial class MainWindow : Window
         if (index < 0) return true;
 
         // Clean up
+        tab.WatcherDebounce?.Cancel();
         tab.Watcher?.Dispose();
         try { if (File.Exists(tab.TempHtmlPath)) File.Delete(tab.TempHtmlPath); } catch { }
 
@@ -2089,11 +2195,8 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnNewFileClick(object? sender, RoutedEventArgs e)
+    private TabState CreateUntitledTab(string displayName, string content)
     {
-        _untitledCounter++;
-        var displayName = _untitledCounter == 1 ? "Untitled" : $"Untitled {_untitledCounter}";
-
         var tab = new TabState
         {
             FilePath = "",
@@ -2101,8 +2204,8 @@ public partial class MainWindow : Window
             IsNewFile = true,
             HasLoadedEditor = true,
             DisplayName = displayName,
-            EditContent = "",
-            OriginalContent = ""
+            EditContent = content,
+            OriginalContent = content
         };
 
         var button = CreateTabButton(tab);
@@ -2110,6 +2213,15 @@ public partial class MainWindow : Window
         _tabPanel.Children.Add(button);
         UpdateTabScrollButtons();
         _tabs.Add(tab);
+        return tab;
+    }
+
+    private void OnNewFileClick(object? sender, RoutedEventArgs e)
+    {
+        _untitledCounter++;
+        var displayName = _untitledCounter == 1 ? "Untitled" : $"Untitled {_untitledCounter}";
+
+        var tab = CreateUntitledTab(displayName, "");
 
         // Auto-enable edit mode if not already
         if (!_isEditMode)
@@ -2185,7 +2297,7 @@ public partial class MainWindow : Window
         var tab = _tabs[_selectedTabIndex];
         try
         {
-            var markdown = _isEditMode ? tab.EditContent : await File.ReadAllTextAsync(tab.FilePath, Encoding.UTF8);
+            var markdown = tab.HasLoadedEditor ? tab.EditContent : await File.ReadAllTextAsync(tab.FilePath, Encoding.UTF8);
             var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
             if (clipboard != null)
             {
@@ -2491,57 +2603,105 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
     private void SetupFileWatcher(TabState tab)
     {
         tab.Watcher?.Dispose();
-        
+        tab.Watcher = null;
+
         var directory = Path.GetDirectoryName(tab.FilePath);
         var fileName = Path.GetFileName(tab.FilePath);
-        
-        if (directory == null) return;
-        
-        tab.Watcher = new FileSystemWatcher(directory, fileName)
+
+        if (string.IsNullOrEmpty(directory) || string.IsNullOrEmpty(fileName)) return;
+
+        var watcher = new FileSystemWatcher(directory, fileName)
         {
-            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size
+            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName
         };
-        
-        tab.Watcher.Changed += async (s, e) =>
+
+        // Many editors save by writing a temp file and renaming it over the original,
+        // which raises Created/Renamed instead of Changed.
+        watcher.Changed += (s, e) => OnWatchedFileChanged(tab);
+        watcher.Created += (s, e) => OnWatchedFileChanged(tab);
+        watcher.Renamed += (s, e) =>
         {
-            await Task.Delay(100);
-            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+            if (string.Equals(e.FullPath, tab.FilePath, StringComparison.OrdinalIgnoreCase))
+                OnWatchedFileChanged(tab);
+        };
+
+        watcher.EnableRaisingEvents = true;
+        tab.Watcher = watcher;
+    }
+
+    private void OnWatchedFileChanged(TabState tab)
+    {
+        // A single save usually raises several events; coalesce them into one reload.
+        var cts = new CancellationTokenSource();
+        Interlocked.Exchange(ref tab.WatcherDebounce, cts)?.Cancel();
+        _ = ReloadAfterExternalChangeAsync(tab, cts.Token);
+    }
+
+    private async Task ReloadAfterExternalChangeAsync(TabState tab, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(WatcherDebounceMs, ct);
+            await Dispatcher.UIThread.InvokeAsync(() => ApplyExternalChangeAsync(tab));
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            Dispatcher.UIThread.Post(() => _statusText.Text = $"Reload failed: {ex.Message}");
+        }
+    }
+
+    private async Task ApplyExternalChangeAsync(TabState tab)
+    {
+        if (!_tabs.Contains(tab) || !File.Exists(tab.FilePath)) return;
+
+        if (tab.IsModified)
+        {
+            // File changed externally while user has unsaved edits -- don't overwrite
+            _statusText.Text = $"Warning: {tab.FileName} changed on disk. Save to overwrite or Refresh (F5) to reload.";
+            return;
+        }
+
+        var content = await ReadFileWithRetryAsync(tab.FilePath);
+
+        // Our own saves and duplicate events land here with nothing new to show
+        if (tab.CachedHtml != null && tab.HasLoadedEditor && content == tab.OriginalContent)
+            return;
+
+        // Keep the editor copy in sync even when edit mode is off, otherwise a later
+        // re-render (theme toggle etc.) would bring back the stale text
+        if (tab.HasLoadedEditor)
+        {
+            tab.OriginalContent = content;
+            tab.EditContent = content;
+
+            if (_isEditMode && _tabs.IndexOf(tab) == _selectedTabIndex)
             {
-                if (tab.IsModified)
-                {
-                    // File changed externally while user has unsaved edits -- don't overwrite
-                    _statusText.Text = $"Warning: {tab.FileName} changed on disk. Save to overwrite or Refresh (F5) to reload.";
-                    return;
-                }
+                _textEditor.TextChanged -= OnEditorTextChanged;
+                _textEditor.Text = content;
+                _textEditor.TextChanged += OnEditorTextChanged;
+            }
+        }
 
-                await GenerateHtml(tab, forceDiskReload: true);
+        tab.CachedHtml = await BuildHtmlForTabAsync(tab, content);
+        if (_tabs.IndexOf(tab) == _selectedTabIndex)
+            RenderHtml(tab.CachedHtml);
+    }
 
-                // Also update the editor content if in edit mode
-                if (_isEditMode && File.Exists(tab.FilePath))
-                {
-                    var content = await File.ReadAllTextAsync(tab.FilePath, Encoding.UTF8);
-                    tab.OriginalContent = content;
-                    tab.EditContent = content;
-
-                    var idx = _tabs.IndexOf(tab);
-                    if (idx == _selectedTabIndex)
-                    {
-                        _textEditor.TextChanged -= OnEditorTextChanged;
-                        _textEditor.Text = content;
-                        _textEditor.TextChanged += OnEditorTextChanged;
-                    }
-                }
-
-                // If this is the selected tab, re-render
-                var tabIdx = _tabs.IndexOf(tab);
-                if (tabIdx == _selectedTabIndex && tab.CachedHtml != null)
-                {
-                    RenderHtml(tab.CachedHtml);
-                }
-            });
-        };
-        
-        tab.Watcher.EnableRaisingEvents = true;
+    private static async Task<string> ReadFileWithRetryAsync(string path)
+    {
+        // The writer may still hold the file open right after the change notification
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await File.ReadAllTextAsync(path, Encoding.UTF8);
+            }
+            catch (IOException) when (attempt < 5)
+            {
+                await Task.Delay(100 * attempt);
+            }
+        }
     }
 
     private void AddLineNumbers(Markdig.Syntax.ContainerBlock container)
@@ -3022,6 +3182,7 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
 
         foreach (var tab in _tabs)
         {
+            tab.WatcherDebounce?.Cancel();
             tab.Watcher?.Dispose();
             try { if (File.Exists(tab.TempHtmlPath)) File.Delete(tab.TempHtmlPath); } catch { }
         }
