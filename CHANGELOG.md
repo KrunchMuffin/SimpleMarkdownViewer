@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.1 - 2026-09-27
+
+### Added
+- Update notifications. At most once a day on startup, the app checks GitHub for a newer release and shows a notice with Download and Dismiss buttons. Nothing is downloaded or installed automatically, and no information about you or your files is sent. Use Help > Check for Updates to check any time, or turn automatic checks off with Help > Check for Updates Automatically.
+
+### Changed
+- Updated the README: edit mode, custom CSS, update checks, the full shortcut list, and corrected file-association instructions.
+
 ## 1.5.0 - 2026-09-27
 
 ### Security
