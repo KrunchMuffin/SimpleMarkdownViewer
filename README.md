@@ -40,7 +40,7 @@ A lightweight, fast markdown and Mermaid viewer built with Avalonia UI.
 
 ### Prerequisites
 
-- [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- [.NET 10.0 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 
 ### Clone and Build
 
