@@ -40,4 +40,13 @@
     </Content>
   </ItemGroup>
 
+  <!-- SkiaSharp/HarfBuzzSharp ship ~100 MB of native debug symbols; keep them out of
+       publish output (and so the installer). Our own .pdb stays for stack traces. -->
+  <Target Name="ExcludeDependencyPdbsFromPublish" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+                             Condition="'%(Extension)' == '.pdb' And '%(Filename)' != '$(AssemblyName)'" />
+    </ItemGroup>
+  </Target>
+
 </Project>
