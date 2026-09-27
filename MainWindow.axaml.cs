@@ -18,8 +18,6 @@ using Avalonia.Threading;
 using AvaloniaEdit;
 using AvaloniaEdit.TextMate;
 using AvaloniaWebView;
-using Markdig;
-using Markdig.Renderers.Html;
 using TextMateSharp.Grammars;
 using WebViewCore.Events;
 
@@ -40,7 +38,7 @@ public partial class MainWindow : Window
     private readonly MenuItem _lineNumbersMenuItem;
     private readonly DockPanel _mainPanel;
     private readonly MenuItem _recentMenu = null!;
-    private readonly MarkdownPipeline _pipeline;
+    private readonly MarkdownRenderer _markdownRenderer = new();
     private readonly object _markdownRenderLock = new();
     
     private static readonly string SettingsDir = Path.Combine(
@@ -280,15 +278,6 @@ public partial class MainWindow : Window
         // Load settings
         LoadSettings();
         UpdateRecentMenu();
-
-        // Configure Markdig
-        _pipeline = new MarkdownPipelineBuilder()
-            .UseAdvancedExtensions()
-            .UseSmartyPants()
-            .UseEmojiAndSmiley()
-            .UseTaskLists()
-            .UseDiagrams()
-            .Build();
 
         // Set up AvaloniaEdit TextMate for markdown highlighting
         SetupTextMateTheme();
@@ -1964,197 +1953,12 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
         }
     }
 
-    private void AddLineNumbers(Markdig.Syntax.ContainerBlock container)
-    {
-        foreach (var block in container)
-        {
-            if (block is Markdig.Extensions.Tables.Table)
-                continue;
-
-            if (block.Line >= 0)
-                block.GetAttributes().AddProperty("data-line", (block.Line + 1).ToString());
-
-            if (block is Markdig.Syntax.ContainerBlock childContainer)
-                AddLineNumbers(childContainer);
-        }
-    }
-
-    private static string ExtractMermaidFences(string markdown, List<string> mermaidBlocks)
-    {
-        var result = new StringBuilder(markdown.Length);
-        var position = 0;
-
-        while (position < markdown.Length)
-        {
-            var lineStart = position;
-            var lineEnd = FindLineEnd(markdown, lineStart);
-            var nextLineStart = FindNextLineStart(markdown, lineEnd);
-            var line = markdown.Substring(lineStart, lineEnd - lineStart);
-
-            if (TryGetFenceLine(line, out var fenceChar, out var fenceLength, out var info)
-                && info.StartsWith("mermaid", StringComparison.OrdinalIgnoreCase))
-            {
-                var codeStart = nextLineStart;
-                var scanPosition = nextLineStart;
-
-                while (scanPosition < markdown.Length)
-                {
-                    var closingLineStart = scanPosition;
-                    var closingLineEnd = FindLineEnd(markdown, closingLineStart);
-                    var closingNextLineStart = FindNextLineStart(markdown, closingLineEnd);
-                    var closingLine = markdown.Substring(closingLineStart, closingLineEnd - closingLineStart);
-
-                    if (IsClosingFenceLine(closingLine, fenceChar, fenceLength))
-                    {
-                        mermaidBlocks.Add(markdown.Substring(codeStart, closingLineStart - codeStart));
-                        result.Append($"<!--MERMAID_PLACEHOLDER_{mermaidBlocks.Count - 1}-->");
-                        position = closingNextLineStart;
-                        goto ContinueScanning;
-                    }
-
-                    scanPosition = closingNextLineStart;
-                }
-            }
-
-            result.Append(markdown, lineStart, nextLineStart - lineStart);
-            position = nextLineStart;
-
-        ContinueScanning:;
-        }
-
-        return result.ToString();
-    }
-
-    private static int FindLineEnd(string text, int start)
-    {
-        var index = start;
-        while (index < text.Length && text[index] != '\r' && text[index] != '\n')
-            index++;
-        return index;
-    }
-
-    private static int FindNextLineStart(string text, int lineEnd)
-    {
-        if (lineEnd >= text.Length)
-            return text.Length;
-
-        if (text[lineEnd] == '\r' && lineEnd + 1 < text.Length && text[lineEnd + 1] == '\n')
-            return lineEnd + 2;
-
-        return lineEnd + 1;
-    }
-
-    private static bool TryGetFenceLine(string line, out char fenceChar, out int fenceLength, out string info)
-    {
-        fenceChar = '\0';
-        fenceLength = 0;
-        info = "";
-
-        var index = 0;
-        while (index < line.Length && (line[index] == ' ' || line[index] == '\t'))
-            index++;
-
-        if (index >= line.Length || (line[index] != '`' && line[index] != '~'))
-            return false;
-
-        fenceChar = line[index];
-        while (index < line.Length && line[index] == fenceChar)
-        {
-            fenceLength++;
-            index++;
-        }
-
-        if (fenceLength < 3)
-            return false;
-
-        info = line.Substring(index).TrimStart();
-        return true;
-    }
-
-    private static bool IsClosingFenceLine(string line, char fenceChar, int openingFenceLength)
-    {
-        var index = 0;
-        while (index < line.Length && (line[index] == ' ' || line[index] == '\t'))
-            index++;
-
-        var fenceLength = 0;
-        while (index < line.Length && line[index] == fenceChar)
-        {
-            fenceLength++;
-            index++;
-        }
-
-        if (fenceLength < openingFenceLength)
-            return false;
-
-        while (index < line.Length)
-        {
-            if (line[index] != ' ' && line[index] != '\t')
-                return false;
-            index++;
-        }
-
-        return true;
-    }
-
-    private string ConvertMarkdownToHtml(string markdown)
-    {
-        // Extract Mermaid blocks BEFORE Markdig processing to protect from typography transforms
-        var mermaidBlocks = new List<string>();
-        markdown = ExtractMermaidFences(markdown, mermaidBlocks);
-
-        markdown = PreprocessMarkdown(markdown);
-
-        string htmlContent;
-        if (_showPreviewLineNumbers)
-        {
-            var document = Markdown.Parse(markdown, _pipeline);
-            // Inject source line numbers as data attributes on all blocks (needed for line numbers and scroll sync)
-            AddLineNumbers(document);
-            using var writer = new System.IO.StringWriter();
-            var renderer = new Markdig.Renderers.HtmlRenderer(writer);
-            _pipeline.Setup(renderer);
-            renderer.Render(document);
-            writer.Flush();
-            htmlContent = writer.ToString();
-        }
-        else
-        {
-            htmlContent = Markdown.ToHtml(markdown, _pipeline);
-        }
-
-        // Restore Mermaid blocks AFTER Markdig processing
-        for (int i = 0; i < mermaidBlocks.Count; i++)
-        {
-            htmlContent = htmlContent.Replace(
-                $"<!--MERMAID_PLACEHOLDER_{i}-->",
-                $"<div class=\"mermaid\">\n{System.Net.WebUtility.HtmlEncode(mermaidBlocks[i])}</div>"
-            );
-        }
-
-        return htmlContent;
-    }
-
-    private static string WrapMermaidSource(string source)
-    {
-        return $"```mermaid\n{source.TrimEnd('\r', '\n')}\n```";
-    }
-
-    private static bool LooksLikeMarkdownDocument(string content)
-    {
-        var trimmed = content.TrimStart('\uFEFF', ' ', '\t', '\r', '\n');
-        return trimmed.StartsWith("#", StringComparison.Ordinal)
-            || trimmed.StartsWith("```", StringComparison.Ordinal)
-            || content.Contains("```mermaid", StringComparison.OrdinalIgnoreCase)
-            || content.Contains("~~~mermaid", StringComparison.OrdinalIgnoreCase);
-    }
-
     private string BuildBodyForTab(TabState tab, string content)
     {
-        var markdown = IsMermaidFile(tab.FilePath) && !LooksLikeMarkdownDocument(content)
-            ? WrapMermaidSource(content)
+        var markdown = IsMermaidFile(tab.FilePath) && !MarkdownRenderer.LooksLikeMarkdownDocument(content)
+            ? MarkdownRenderer.WrapMermaidSource(content)
             : content;
-        return ConvertMarkdownToHtml(markdown);
+        return _markdownRenderer.ToHtml(markdown, _showPreviewLineNumbers);
     }
 
     private Task<string> BuildBodyForTabAsync(TabState tab, string content)
@@ -2322,112 +2126,6 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
         {
             _statusText.Text = $"Render error: {ex.Message}";
         }
-    }
-
-    private string PreprocessMarkdown(string markdown)
-    {
-        var result = new StringBuilder(markdown.Length);
-        var segmentStart = 0;
-        var position = 0;
-
-        while (position < markdown.Length)
-        {
-            var lineStart = position;
-            var lineEnd = FindLineEnd(markdown, lineStart);
-            var nextLineStart = FindNextLineStart(markdown, lineEnd);
-            var line = markdown.Substring(lineStart, lineEnd - lineStart);
-
-            if (TryGetFenceLine(line, out var fenceChar, out var fenceLength, out _))
-            {
-                var scanPosition = nextLineStart;
-
-                while (scanPosition < markdown.Length)
-                {
-                    var closingLineStart = scanPosition;
-                    var closingLineEnd = FindLineEnd(markdown, closingLineStart);
-                    var closingNextLineStart = FindNextLineStart(markdown, closingLineEnd);
-                    var closingLine = markdown.Substring(closingLineStart, closingLineEnd - closingLineStart);
-
-                    if (IsClosingFenceLine(closingLine, fenceChar, fenceLength))
-                    {
-                        if (lineStart > segmentStart)
-                            result.Append(PreprocessMarkdownSegment(markdown.Substring(segmentStart, lineStart - segmentStart)));
-
-                        result.Append(markdown, lineStart, closingNextLineStart - lineStart);
-                        position = closingNextLineStart;
-                        segmentStart = position;
-                        goto ContinueScanning;
-                    }
-
-                    scanPosition = closingNextLineStart;
-                }
-
-                if (lineStart > segmentStart)
-                    result.Append(PreprocessMarkdownSegment(markdown.Substring(segmentStart, lineStart - segmentStart)));
-
-                result.Append(markdown, lineStart, markdown.Length - lineStart);
-                return result.ToString();
-            }
-
-            position = nextLineStart;
-
-        ContinueScanning:;
-        }
-
-        if (segmentStart < markdown.Length)
-            result.Append(PreprocessMarkdownSegment(markdown.Substring(segmentStart)));
-
-        return result.ToString();
-    }
-
-    private string PreprocessMarkdownSegment(string markdown)
-    {
-        // Ensure tables have a blank line before them (for Markdig compatibility).
-        markdown = System.Text.RegularExpressions.Regex.Replace(
-            markdown,
-            @"(\n[^\n\|]+)\n(\|[^\n]+\|)",
-            "$1\n\n$2",
-            System.Text.RegularExpressions.RegexOptions.Multiline);
-
-        return PreprocessMathSegment(markdown);
-    }
-
-    private string PreprocessMathSegment(string markdown)
-    {
-        var codeSpans = new List<string>();
-        markdown = System.Text.RegularExpressions.Regex.Replace(
-            markdown,
-            @"(`+)([\s\S]*?)\1",
-            m =>
-            {
-                var index = codeSpans.Count;
-                codeSpans.Add(m.Value);
-                return $"@@MDVIEWER_CODE_SPAN_{index}@@";
-            });
-
-        markdown = System.Text.RegularExpressions.Regex.Replace(
-            markdown,
-            @"(?<!\\)\$\$(.+?)(?<!\\)\$\$",
-            m =>
-            {
-                var math = System.Net.WebUtility.HtmlEncode(m.Groups[1].Value.Trim());
-                return $"<div class=\"math-display\" data-math=\"{math}\"></div>";
-            },
-            System.Text.RegularExpressions.RegexOptions.Singleline);
-
-        markdown = System.Text.RegularExpressions.Regex.Replace(
-            markdown,
-            @"(?<![\\$])\$([^\s$\d](?:[^$\n]*?[^\s$])?)\$(?![$\d])",
-            m =>
-            {
-                var math = System.Net.WebUtility.HtmlEncode(m.Groups[1].Value.Trim());
-                return $"<span class=\"math-inline\" data-math=\"{math}\"></span>";
-            });
-
-        for (var i = 0; i < codeSpans.Count; i++)
-            markdown = markdown.Replace($"@@MDVIEWER_CODE_SPAN_{i}@@", codeSpans[i]);
-
-        return markdown;
     }
 
     private bool _isClosingConfirmed;
