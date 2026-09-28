@@ -10,15 +10,28 @@ body:
     id: version
     attributes:
       label: App version
-      description: Shown in Help > About (or on the installer file name).
-      placeholder: "1.5.1"
+      description: Shown in Help > About (or in the download's file name).
+      placeholder: "1.5.2"
     validations:
       required: true
   - type: input
     id: os
     attributes:
       label: Operating system and version
-      placeholder: "Windows 11 Pro 24H2 (build 26100)"
+      placeholder: "Windows 11 Pro 24H2 (build 26100), macOS 15.4, Ubuntu 24.04"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it?
+      options:
+        - Windows installer (.exe)
+        - macOS disk image (.dmg), Apple Silicon
+        - macOS disk image (.dmg), Intel
+        - Linux .deb
+        - Linux AppImage
+        - Built from source
     validations:
       required: true
   - type: textarea
@@ -40,11 +53,15 @@ body:
   - type: textarea
     id: crash-details
     attributes:
-      label: Crash details (Windows)
+      label: Crash details
       description: |
-        If the app crashes or won't start, open **Event Viewer > Windows Logs > Application** and look for entries at the time of the crash. Please paste both:
-        - the **Application Error** entry for SimpleMarkdownViewer.exe
-        - the **.NET Runtime** entry just before it (it contains the error and stack trace)
+        If the app crashes or won't start:
+
+        **Windows:** open **Event Viewer > Windows Logs > Application** and look for entries at the time of the crash. Please paste both the **Application Error** entry for SimpleMarkdownViewer.exe and the **.NET Runtime** entry just before it (it contains the error and stack trace).
+
+        **macOS:** start it from Terminal and paste what it prints: `"/Applications/Simple Markdown Viewer.app/Contents/MacOS/SimpleMarkdownViewer"`
+
+        **Linux:** start it from a terminal (`simplemarkdownviewer` for the .deb, or run the AppImage file) and paste what it prints.
       render: text
   - type: textarea
     id: extra

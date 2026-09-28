@@ -22,6 +22,6 @@ Examples of what's in scope:
 
 - A markdown or Mermaid file that runs script in the preview, reads local files, or triggers app commands
 - Links in a document that launch programs or open files without the user clicking them
-- Problems with the update check or the installer
+- Problems with the update check, the Windows installer, or the macOS and Linux packages
 
-Issues in third-party components (Avalonia, WebView2, Markdig, Mermaid, KaTeX, highlight.js) are best reported to those projects, but let us know too if they affect this app.
+Issues in third-party components (Avalonia, WebView2, WKWebView, WebKitGTK, Markdig, Mermaid, KaTeX, highlight.js) are best reported to those projects, but let us know too if they affect this app.
