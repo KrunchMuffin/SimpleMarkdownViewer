@@ -227,6 +227,11 @@ kbd {
 .platforms ul { margin: 0; padding-left: 1.1em; color: var(--ink-2); }
 .platforms li { margin: .35em 0; }
 .platforms li strong { color: var(--ink); }
+.platforms .downloads { list-style: none; padding: 0; margin: 0 0 1.4em; }
+.platforms .downloads li { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin: 0; padding: 11px 0; border-bottom: 1px solid var(--rule); }
+.platforms .downloads li:first-child { border-top: 1px solid var(--rule); }
+.platforms .downloads a { font-weight: 700; color: var(--ink); text-underline-offset: 3px; }
+.platforms .downloads span { font-size: .9rem; white-space: nowrap; }
 .term { background: #0D1522; color: #DCE6F2; border-radius: 12px; overflow: hidden; border: 1px solid #1F2B3D; }
 .term-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px 10px 18px; border-bottom: 1px solid #1F2B3D; font-size: .82rem; color: #8FA0B6; }
 .term pre { margin: 0; padding: 18px 20px 20px; overflow-x: auto; font: .9rem/1.75 var(--mono); }
@@ -301,11 +306,11 @@ A small, free **markdown and Mermaid viewer** for Windows. Press `Ctrl+E` to edi
       <div class="get">
         <a class="btn" id="dl" href="https://github.com/KrunchMuffin/SimpleMarkdownViewer/releases/latest">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m6.5 10 5.5 5.5L17.5 10"/><path d="M4 20h16"/></svg>
-          <span>Download for Windows<small id="dl-meta">Free installer from GitHub</small></span>
+          <span><span data-dl-label>Download for Windows</span><small id="dl-meta">Free installer from GitHub</small></span>
         </a>
         <p class="get-meta">
           <span id="ver">Windows 10 and 11.</span> MIT licensed.<br>
-          On a Mac or Linux? <a href="#other-platforms">Build it from source</a>.
+          <span id="others">On a Mac or Linux? <a href="#other-platforms">Build it from source</a>.</span>
         </p>
       </div>
     </div>
@@ -414,11 +419,21 @@ A small, free **markdown and Mermaid viewer** for Windows. Press `Ctrl+E` to edi
     <div class="wrap platforms">
       <div>
         <h2 id="platforms-h">macOS and Linux</h2>
-        <p>There's no packaged download for these yet, but the app is cross-platform and builds with the .NET 10 SDK. These builds haven't been tested much, so please <a href="https://github.com/KrunchMuffin/SimpleMarkdownViewer/issues">open an issue</a> if something doesn't work.</p>
-        <ul>
-          <li><strong>macOS</strong> uses the built-in WKWebView. Use <code>osx-arm64</code> on Apple Silicon or <code>osx-x64</code> on Intel.</li>
-          <li><strong>Linux</strong> needs WebKitGTK: <code>libwebkit2gtk-4.1-0</code> on Ubuntu and Debian, <code>webkit2gtk4.1</code> on Fedora and Arch.</li>
-        </ul>
+        <!-- Shown until a release includes macOS and Linux downloads -->
+        <div data-builds="none">
+          <p>There's no packaged download for these yet, but the app is cross-platform and builds with the .NET 10 SDK. These builds haven't been tested much, so please <a href="https://github.com/KrunchMuffin/SimpleMarkdownViewer/issues">open an issue</a> if something doesn't work.</p>
+          <ul>
+            <li><strong>macOS</strong> uses the built-in WKWebView. Use <code>osx-arm64</code> on Apple Silicon or <code>osx-x64</code> on Intel.</li>
+            <li><strong>Linux</strong> needs WebKitGTK: <code>libwebkit2gtk-4.1-0</code> on Ubuntu and Debian, <code>webkit2gtk4.1</code> on Fedora and Arch.</li>
+          </ul>
+        </div>
+        <div data-builds="some" hidden>
+          <p>These downloads are new, so please <a href="https://github.com/KrunchMuffin/SimpleMarkdownViewer/issues">open an issue</a> if something doesn't work.</p>
+          <ul class="downloads" id="downloads"></ul>
+          <p><strong>First launch on macOS:</strong> the app isn't notarized by Apple yet, so macOS blocks it the first time. Open it once, then go to System Settings &gt; Privacy &amp; Security and choose Open Anyway.</p>
+          <p><strong>AppImage:</strong> needs WebKitGTK 4.1 (<code>libwebkit2gtk-4.1-0</code> on Ubuntu and Debian, <code>webkit2gtk4.1</code> on Fedora and Arch). The .deb installs it for you.</p>
+          <p>You can also build it yourself with the .NET 10 SDK.</p>
+        </div>
       </div>
       <div class="term">
         <div class="term-head"><span>Terminal</span><button class="copy" type="button" data-copy="build">Copy</button></div>
@@ -440,7 +455,7 @@ dotnet publish -c Release -r osx-arm64 --self-contained -o publish</pre>
       <h2 id="closer-h">Make .md files open in something that reads them.</h2>
       <a class="btn" href="https://github.com/KrunchMuffin/SimpleMarkdownViewer/releases/latest" data-dl>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m6.5 10 5.5 5.5L17.5 10"/><path d="M4 20h16"/></svg>
-        <span>Download for Windows</span>
+        <span data-dl-label>Download for Windows</span>
       </a>
     </div>
   </section>
@@ -535,17 +550,54 @@ dotnet publish -c Release -r osx-arm64 --self-contained -o publish</pre>
   });
   reset.addEventListener("click", function () { ta.value = original; update(); ta.focus(); });
 
-  // ---- Point the download buttons at the actual installer ----
+  // ---- Point the download buttons at the right file for this visitor ----
+  var BUILDS = [
+    { os: "windows", test: /Setup-.*\.exe$/i, button: "Download for Windows", short: "Windows", name: "Windows 10 and 11", kind: "installer" },
+    { os: "mac", test: /macos-arm64\.dmg$/i, button: "Download for macOS", short: "macOS", name: "macOS, Apple Silicon", kind: "disk image" },
+    { os: "mac-intel", test: /macos-x64\.dmg$/i, short: "Intel Macs", name: "macOS, Intel", kind: "disk image" },
+    { os: "linux", test: /\.deb$/i, button: "Download for Linux", short: "Linux", name: "Ubuntu and Debian (.deb)", kind: "package" },
+    { os: "linux-other", test: /\.AppImage$/i, short: "Linux", name: "Other Linux (AppImage)", kind: "AppImage" }
+  ];
+  function visitorOs() {
+    var p = ((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent).toLowerCase();
+    if (/mac|iphone|ipad/.test(p)) return "mac";
+    if (/linux|x11|cros/.test(p) && !/android/.test(p)) return "linux";
+    return "windows";
+  }
+  function mb(bytes) { return Math.round(bytes / 1048576) + " MB"; }
+
   fetch("https://api.github.com/repos/KrunchMuffin/SimpleMarkdownViewer/releases/latest")
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (rel) {
       if (!rel) return;
-      var exe = (rel.assets || []).filter(function (a) { return /\.exe$/i.test(a.name); })[0];
       var version = (rel.tag_name || "").replace(/^v/, "");
-      if (exe) {
-        document.querySelectorAll("#dl, [data-dl]").forEach(function (a) { a.href = exe.browser_download_url; });
-        var mb = Math.round(exe.size / 1048576);
-        document.getElementById("dl-meta").textContent = "Version " + version + ", " + mb + " MB installer";
+      var found = BUILDS.map(function (b) {
+        var asset = (rel.assets || []).filter(function (a) { return b.test.test(a.name); })[0];
+        return asset ? { build: b, asset: asset } : null;
+      }).filter(Boolean);
+      if (!found.length) return;
+
+      var os = visitorOs();
+      var primary = found.filter(function (f) { return f.build.os === os; })[0] ||
+                    found.filter(function (f) { return f.build.os === "windows"; })[0] || found[0];
+      document.querySelectorAll("#dl, [data-dl]").forEach(function (a) { a.href = primary.asset.browser_download_url; });
+      document.querySelectorAll("[data-dl-label]").forEach(function (el) { el.textContent = primary.build.button; });
+      document.getElementById("dl-meta").textContent = "Version " + version + ", " + mb(primary.asset.size) + " " + primary.build.kind;
+
+      var others = found.filter(function (f) { return f !== primary; });
+      var hasOtherPlatforms = found.some(function (f) { return f.build.os !== "windows"; });
+      if (hasOtherPlatforms) {
+        document.getElementById("others").innerHTML = others.length
+          ? 'Also for ' + others.map(function (f) { return f.build.short; })
+              .filter(function (n, i, all) { return all.indexOf(n) === i; }).slice(0, 3).join(", ") +
+            '. <a href="#other-platforms">All downloads</a>.'
+          : "";
+        document.getElementById("downloads").innerHTML = found.filter(function (f) { return f.build.os !== "windows"; })
+          .map(function (f) {
+            return '<li><a href="' + esc(f.asset.browser_download_url) + '">' + esc(f.build.name) + '</a><span>' + mb(f.asset.size) + '</span></li>';
+          }).join("");
+        document.querySelector('[data-builds="none"]').hidden = true;
+        document.querySelector('[data-builds="some"]').hidden = false;
       }
       if (rel.published_at) {
         var d = new Date(rel.published_at).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });

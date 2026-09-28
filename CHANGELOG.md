@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Downloads for macOS (Apple Silicon and Intel) and Linux (.deb and AppImage), built and tested automatically for each release. These are new, so please report anything that doesn't work.
+
+### Fixed
+- On Linux, the preview showed "The URL can't be shown" instead of the document.
+- On macOS, the menu bar showed "Avalonia Application" instead of the app's name.
+
 ## 1.5.1 - 2026-09-27
 
 ### Added
