@@ -6,7 +6,7 @@
 
 A lightweight, fast markdown and Mermaid viewer and editor built with Avalonia UI.
 
-**Website:** https://krunchmuffin.github.io/SimpleMarkdownViewer/
+**Website:** https://smv.dabworx.com/
 
 ![Screenshot](screenshot.png)
 
