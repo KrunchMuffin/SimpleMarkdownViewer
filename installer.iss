@@ -2,7 +2,7 @@
 ; Download Inno Setup from: https://jrsoftware.org/isinfo.php
 
 #define MyAppName "Simple Markdown Viewer"
-#define MyAppVersion "1.5.1"
+#define MyAppVersion "1.5.2"
 #define MyAppPublisher "DAB Worx Inc."
 #define MyAppURL "https://github.com/KrunchMuffin/SimpleMarkdownViewer"
 #define MyAppExeName "SimpleMarkdownViewer.exe"
