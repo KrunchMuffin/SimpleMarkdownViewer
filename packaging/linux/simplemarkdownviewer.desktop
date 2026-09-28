@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Simple Markdown Viewer
+Comment=View and edit markdown and Mermaid files
+Exec=simplemarkdownviewer %f
+Icon=simplemarkdownviewer
+Terminal=false
+Categories=Office;TextTools;Utility;
+MimeType=text/markdown;text/x-markdown;
+Keywords=markdown;md;mermaid;viewer;editor;

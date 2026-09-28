@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- __VERSION__ is filled in by .github/workflows/release.yml -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>Simple Markdown Viewer</string>
+  <key>CFBundleDisplayName</key>
+  <string>Simple Markdown Viewer</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.dabworx.simplemarkdownviewer</string>
+  <key>CFBundleExecutable</key>
+  <string>SimpleMarkdownViewer</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleVersion</key>
+  <string>__VERSION__</string>
+  <key>CFBundleShortVersionString</key>
+  <string>__VERSION__</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>14.0</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.productivity</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>NSHumanReadableCopyright</key>
+  <string>© DAB Worx Inc. MIT License.</string>
+</dict>
+</plist>

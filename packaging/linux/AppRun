@@ -1,0 +1,33 @@
+#!/bin/sh
+# AppImage entry point. The preview needs the system's WebKitGTK 4.1, which the
+# AppImage does not bundle; without it the app would crash on startup, so explain instead.
+HERE="$(dirname "$(readlink -f "$0")")"
+
+has_webkit() {
+  for ldconfig in ldconfig /sbin/ldconfig /usr/sbin/ldconfig; do
+    if command -v "$ldconfig" >/dev/null 2>&1; then
+      "$ldconfig" -p 2>/dev/null | grep -q 'libwebkit2gtk-4\.1\.so\.0' && return 0
+      return 1
+    fi
+  done
+  # No ldconfig to ask; let the app try
+  return 0
+}
+
+if ! has_webkit; then
+  MSG="Simple Markdown Viewer needs WebKitGTK 4.1 to show the preview.
+
+Install it, then start the app again:
+  Ubuntu or Debian:  sudo apt install libwebkit2gtk-4.1-0
+  Fedora:  sudo dnf install webkit2gtk4.1
+  Arch:  sudo pacman -S webkit2gtk-4.1"
+  echo "$MSG" >&2
+  if command -v zenity >/dev/null 2>&1; then
+    zenity --error --title="Simple Markdown Viewer" --text="$MSG" 2>/dev/null
+  elif command -v kdialog >/dev/null 2>&1; then
+    kdialog --title "Simple Markdown Viewer" --error "$MSG" 2>/dev/null
+  fi
+  exit 1
+fi
+
+exec "$HERE/usr/lib/simplemarkdownviewer/SimpleMarkdownViewer" "$@"

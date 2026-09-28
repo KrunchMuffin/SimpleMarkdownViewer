@@ -1,0 +1,335 @@
+name: Release
+
+# Pushing a version tag (v1.6.0) builds every platform and attaches the downloads to a
+# draft release for review. Running it by hand without a tag is a test build: the
+# downloads are kept as workflow artifacts and no release is touched.
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release, such as v1.6.0. Leave empty for a test build.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the version
+        id: version
+        run: |
+          TAG="${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name) || '' }}"
+          VERSION=$(grep -oPm1 '(?<=<Version>)[^<]+' SimpleMarkdownViewer.csproj)
+          ISS_VERSION=$(grep -oP '#define MyAppVersion "\K[^"]+' installer.iss)
+          if [ "$ISS_VERSION" != "$VERSION" ]; then
+            echo "::error::installer.iss says $ISS_VERSION but SimpleMarkdownViewer.csproj says $VERSION"
+            exit 1
+          fi
+          if [ -n "$TAG" ] && [ "${TAG#v}" != "$VERSION" ]; then
+            echo "::error::Tag $TAG does not match version $VERSION in SimpleMarkdownViewer.csproj"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+  windows:
+    needs: prepare
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish
+        run: dotnet publish -c Release -r win-x64 --self-contained -o publish
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
+          & $iscc installer.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-windows
+          path: installer/SimpleMarkdownViewer-Setup-${{ needs.prepare.outputs.version }}.exe
+          if-no-files-found: error
+
+  macos:
+    needs: prepare
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+          - arch: x64
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      APP: stage/Simple Markdown Viewer.app
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish
+        run: dotnet publish -c Release -r osx-${{ matrix.arch }} --self-contained -o publish
+
+      - name: Build app bundle
+        run: |
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp -R publish/. "$APP/Contents/MacOS/"
+          sed "s/__VERSION__/$VERSION/g" packaging/macos/Info.plist > "$APP/Contents/Info.plist"
+          plutil -lint "$APP/Contents/Info.plist"
+
+          mkdir AppIcon.iconset
+          for size in 16 32 128 256 512; do
+            sips -z $size $size Assets/app-icon.png --out AppIcon.iconset/icon_${size}x${size}.png >/dev/null
+            double=$((size * 2))
+            if [ $double -le 512 ]; then
+              sips -z $double $double Assets/app-icon.png --out AppIcon.iconset/icon_${size}x${size}@2x.png >/dev/null
+            fi
+          done
+          iconutil -c icns AppIcon.iconset -o "$APP/Contents/Resources/AppIcon.icns"
+
+          # Not notarized; an ad-hoc signature is still required for Apple Silicon to run it
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict "$APP"
+
+      - name: Smoke test
+        if: matrix.arch == 'arm64'
+        run: |
+          "$APP/Contents/MacOS/SimpleMarkdownViewer" "$PWD/demo.md" > smoke.log 2>&1 &
+          PID=$!
+          sleep 25
+          screencapture -x smoke-macos.png || true
+          if kill -0 $PID 2>/dev/null; then
+            kill $PID
+            echo "App was still running after 25 seconds"
+          else
+            echo "::error::The app exited during startup"
+            cat smoke.log
+            exit 1
+          fi
+
+      - name: Build disk image
+        run: |
+          ln -s /Applications stage/Applications
+          hdiutil create -volname "Simple Markdown Viewer" -srcfolder stage -ov -format UDZO \
+            "SimpleMarkdownViewer-$VERSION-macos-${{ matrix.arch }}.dmg"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-macos-${{ matrix.arch }}
+          path: SimpleMarkdownViewer-${{ needs.prepare.outputs.version }}-macos-${{ matrix.arch }}.dmg
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        if: always() && matrix.arch == 'arm64'
+        with:
+          name: smoke-test-macos
+          path: |
+            smoke-macos.png
+            smoke.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  linux:
+    needs: prepare
+    # The oldest supported Ubuntu, so the build runs on as many distros as possible
+    runs-on: ubuntu-22.04
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish
+        run: dotnet publish -c Release -r linux-x64 --self-contained -o publish
+
+      - name: Prepare icon
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+          convert Assets/app-icon.png -resize 256x256 icon-256.png
+
+      - name: Build .deb
+        run: |
+          PKG=pkg
+          mkdir -p $PKG/DEBIAN $PKG/opt/simplemarkdownviewer $PKG/usr/bin \
+            $PKG/usr/share/applications $PKG/usr/share/icons/hicolor/256x256/apps \
+            $PKG/usr/share/icons/hicolor/512x512/apps
+          cp -R publish/. $PKG/opt/simplemarkdownviewer/
+          chmod -R u=rwX,go=rX $PKG/opt/simplemarkdownviewer
+          chmod 755 $PKG/opt/simplemarkdownviewer/SimpleMarkdownViewer
+          ln -s /opt/simplemarkdownviewer/SimpleMarkdownViewer $PKG/usr/bin/simplemarkdownviewer
+          install -m 644 packaging/linux/simplemarkdownviewer.desktop $PKG/usr/share/applications/
+          install -m 644 icon-256.png $PKG/usr/share/icons/hicolor/256x256/apps/simplemarkdownviewer.png
+          install -m 644 Assets/app-icon.png $PKG/usr/share/icons/hicolor/512x512/apps/simplemarkdownviewer.png
+
+          cat > $PKG/DEBIAN/control <<EOF
+          Package: simplemarkdownviewer
+          Version: $VERSION
+          Section: text
+          Priority: optional
+          Architecture: amd64
+          Depends: libwebkit2gtk-4.1-0, libgtk-3-0
+          Installed-Size: $(du -sk $PKG --exclude=DEBIAN | cut -f1)
+          Maintainer: DAB Worx Inc. <KrunchMuffin@users.noreply.github.com>
+          Homepage: https://smv.dabworx.com/
+          Description: Markdown and Mermaid viewer and editor
+           A lightweight viewer and editor for markdown and Mermaid files, with
+           live reload, tabs, diagrams, KaTeX math and code highlighting.
+          EOF
+
+          dpkg-deb --build --root-owner-group $PKG "simplemarkdownviewer_${VERSION}_amd64.deb"
+          dpkg-deb --info "simplemarkdownviewer_${VERSION}_amd64.deb"
+
+      - name: Build AppImage
+        run: |
+          APPDIR=AppDir
+          mkdir -p $APPDIR/usr/lib/simplemarkdownviewer
+          cp -R publish/. $APPDIR/usr/lib/simplemarkdownviewer/
+          install -m 755 packaging/linux/AppRun $APPDIR/AppRun
+          sed 's/^Exec=.*/Exec=SimpleMarkdownViewer %f/' packaging/linux/simplemarkdownviewer.desktop \
+            > $APPDIR/simplemarkdownviewer.desktop
+          cp icon-256.png $APPDIR/simplemarkdownviewer.png
+          ln -s simplemarkdownviewer.png $APPDIR/.DirIcon
+
+          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage --appimage-extract-and-run $APPDIR \
+            "SimpleMarkdownViewer-$VERSION-linux-x86_64.AppImage"
+
+      - name: Smoke test
+        run: |
+          sudo apt-get install -y xvfb dbus-x11
+          # Installing the .deb also checks that its dependencies resolve
+          sudo apt-get install -y "./simplemarkdownviewer_${VERSION}_amd64.deb"
+
+          smoke() {
+            name=$1; shift
+            xvfb-run -a -s "-screen 0 1400x900x24" sh -c '
+              "$@" "$GITHUB_WORKSPACE/demo.md" > "smoke-$0.log" 2>&1 &
+              PID=$!
+              sleep 25
+              import -window root "smoke-$0.png" || true
+              if kill -0 $PID 2>/dev/null; then kill $PID; exit 0; fi
+              exit 1
+            ' "$name" "$@"
+          }
+
+          ok=true
+          smoke deb simplemarkdownviewer || { echo "::error::Installed .deb exited during startup"; cat smoke-deb.log; ok=false; }
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          smoke appimage "./SimpleMarkdownViewer-$VERSION-linux-x86_64.AppImage" \
+            || { echo "::error::AppImage exited during startup"; cat smoke-appimage.log; ok=false; }
+          $ok
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-linux
+          path: |
+            simplemarkdownviewer_${{ needs.prepare.outputs.version }}_amd64.deb
+            SimpleMarkdownViewer-${{ needs.prepare.outputs.version }}-linux-x86_64.AppImage
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: smoke-test-linux
+          path: smoke-*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  release:
+    needs: [prepare, windows, macos, linux]
+    if: needs.prepare.outputs.tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          pattern: dist-*
+          merge-multiple: true
+
+      - name: Write release notes
+        run: |
+          # This version's section of the changelog ("## 1.6.0 - 2026-10-01")
+          awk -v ver="$VERSION" '
+            /^## / { if (found) exit; if ($2 == ver) { found = 1; next } }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "Release $TAG" > notes.md
+
+          sha() { sha256sum "dist/$1" | cut -d' ' -f1; }
+          WIN="SimpleMarkdownViewer-Setup-$VERSION.exe"
+          MAC_ARM="SimpleMarkdownViewer-$VERSION-macos-arm64.dmg"
+          MAC_X64="SimpleMarkdownViewer-$VERSION-macos-x64.dmg"
+          DEB="simplemarkdownviewer_${VERSION}_amd64.deb"
+          APPIMAGE="SimpleMarkdownViewer-$VERSION-linux-x86_64.AppImage"
+          cat >> notes.md <<EOF
+
+          ## Downloads
+
+          | Platform | File | SHA-256 |
+          |---|---|---|
+          | Windows 10 and 11 | \`$WIN\` | \`$(sha $WIN)\` |
+          | macOS 14+, Apple Silicon | \`$MAC_ARM\` | \`$(sha $MAC_ARM)\` |
+          | macOS 14+, Intel | \`$MAC_X64\` | \`$(sha $MAC_X64)\` |
+          | Ubuntu, Debian | \`$DEB\` | \`$(sha $DEB)\` |
+          | Other Linux | \`$APPIMAGE\` | \`$(sha $APPIMAGE)\` |
+
+          The macOS and Linux builds are new and have had little testing. Please [open an issue](https://github.com/${{ github.repository }}/issues) if something doesn't work.
+
+          **macOS:** the app isn't notarized by Apple yet, so macOS blocks it the first time. Open it once, then go to **System Settings > Privacy & Security** and choose **Open Anyway**.
+
+          **Linux AppImage:** needs WebKitGTK 4.1 (\`sudo apt install libwebkit2gtk-4.1-0\`, \`sudo dnf install webkit2gtk4.1\` or \`sudo pacman -S webkit2gtk-4.1\`). The .deb installs it for you.
+          EOF
+
+      # Reuses a draft with this tag if one exists, so a failed run can be re-run
+      - name: Create or update draft release
+        run: |
+          ID=$(gh api "repos/${{ github.repository }}/releases" --jq ".[] | select(.tag_name == \"$TAG\") | .id")
+          if [ -z "$ID" ]; then
+            gh release create "$TAG" --draft --target "$GITHUB_SHA" \
+              --title "Simple Markdown Viewer $VERSION" --notes-file notes.md
+          else
+            gh release edit "$TAG" --notes-file notes.md
+          fi
+          gh release upload "$TAG" dist/* --clobber
+          echo "Draft release ready: review it at https://github.com/${{ github.repository }}/releases" >> "$GITHUB_STEP_SUMMARY"
