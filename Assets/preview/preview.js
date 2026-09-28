@@ -32,7 +32,14 @@
 
     function sendToHost(command, params) {
         const query = new URLSearchParams(Object.assign({ token: hostToken }, params)).toString();
-        window.location.href = 'app://' + command + '?' + query;
+        const url = 'app://' + command + '?' + query;
+        // The WebView's message channel works everywhere; navigating to app:// is the
+        // fallback, and WebKitGTK shows an error page for it
+        if (typeof window.invokeCSharpAction === 'function') {
+            window.invokeCSharpAction(url);
+        } else {
+            window.location.href = url;
+        }
     }
 
     function reuseCachedDiagrams() {

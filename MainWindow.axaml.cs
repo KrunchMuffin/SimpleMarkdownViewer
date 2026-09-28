@@ -325,6 +325,7 @@ public partial class MainWindow : Window
         _webView.EnvironmentRequested += OnWebViewEnvironmentRequested;
         _webView.AdapterCreated += OnWebViewCreated;
         _webView.NavigationStarted += OnNavigationStarting;
+        _webView.WebMessageReceived += OnWebMessageReceived;
         // Links are routed through the host by the preview script; never open popups
         _webView.NewWindowRequested += (s, e) => e.Handled = true;
 
@@ -875,6 +876,15 @@ public partial class MainWindow : Window
                 _ = OpenFileInNewTab(filePath);
             }
         }
+    }
+
+    // The preview sends its app:// commands as web messages where the WebView supports
+    // them; WebKitGTK shows an error page for app:// navigations instead of letting us cancel
+    private void OnWebMessageReceived(object? sender, WebMessageReceivedEventArgs e)
+    {
+        var message = e.Body;
+        if (message != null && message.StartsWith("app://", StringComparison.OrdinalIgnoreCase))
+            Dispatcher.UIThread.Post(() => HandleAppCommand(message));
     }
 
     private void HandleAppCommand(string url)
