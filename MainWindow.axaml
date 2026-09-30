@@ -51,9 +51,9 @@
         <!-- Update available notice (hidden until a newer release is found) -->
         <Border DockPanel.Dock="Top" x:Name="UpdateBanner" Padding="10,6" IsVisible="False">
             <DockPanel>
-                <Button DockPanel.Dock="Right" Content="Dismiss" Click="OnDismissUpdateClick"
+                <Button DockPanel.Dock="Right" x:Name="DismissUpdateButton" Content="Dismiss" Click="OnDismissUpdateClick"
                         Padding="10,2" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                <Button DockPanel.Dock="Right" Content="Download" Click="OnDownloadUpdateClick"
+                <Button DockPanel.Dock="Right" x:Name="UpdateActionButton" Content="Download" Click="OnDownloadUpdateClick"
                         Padding="10,2" VerticalAlignment="Center"/>
                 <TextBlock x:Name="UpdateBannerText" VerticalAlignment="Center" TextWrapping="Wrap"/>
             </DockPanel>

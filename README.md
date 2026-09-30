@@ -92,7 +92,9 @@ These files live in the settings folder along with `settings.json`:
 
 ## Update Checks
 
-At most once a day, when the app starts, it asks GitHub for the latest release version. If there's a newer one, a notice appears at the top of the window with a Download button (which opens the release page) and a Dismiss button. Nothing is downloaded or installed automatically, and no information about you or your files is sent.
+At most once a day, when the app starts, it asks GitHub for the latest release version. If there's a newer one, a notice appears at the top of the window. No information about you or your files is sent, and nothing is downloaded until you ask.
+
+On Windows, if you installed with the installer, the notice has an **Install Update** button. It downloads the new installer from GitHub, checks it against the SHA-256 checksum published with the release, offers to save any unsaved changes, and installs it (Windows asks for administrator permission). The app then restarts on the new version with the same files open. Everywhere else (the portable Windows build, macOS and Linux), the **Download** button opens the release page.
 
 You can check manually with **Help > Check for Updates**, or turn automatic checks off with **Help > Check for Updates Automatically**.
 

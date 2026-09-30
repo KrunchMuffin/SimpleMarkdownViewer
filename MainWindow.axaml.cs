@@ -40,6 +40,8 @@ public partial class MainWindow : Window
     private readonly MenuItem _autoUpdateCheckMenuItem;
     private readonly Border _updateBanner;
     private readonly TextBlock _updateBannerText;
+    private readonly Button _updateActionButton;
+    private readonly Button _dismissUpdateButton;
     private readonly DockPanel _mainPanel;
     private readonly MenuItem _recentMenu = null!;
     private readonly MarkdownRenderer _markdownRenderer = new();
@@ -51,6 +53,9 @@ public partial class MainWindow : Window
 
     private static readonly string SettingsPath = Path.Combine(SettingsDir, "settings.json");
 
+    // Written just before the app closes to install an update; read once on the next start
+    private static readonly string ReopenAfterUpdatePath = Path.Combine(SettingsDir, "reopen-after-update.json");
+
     private bool _isDarkMode = false;
     private bool _showPreviewLineNumbers = false;
 
@@ -61,6 +66,7 @@ public partial class MainWindow : Window
     private string? _latestKnownReleaseUrl;
     private string? _dismissedUpdateVersion;
     private static readonly TimeSpan UpdateCheckInterval = TimeSpan.FromDays(1);
+    private bool _installingUpdate;
     private bool _webViewReady = false;
     private string? _welcomeTempHtmlPath;
     private int _renderVersion;
@@ -291,6 +297,9 @@ public partial class MainWindow : Window
         _autoUpdateCheckMenuItem = this.FindControl<MenuItem>("AutoUpdateCheckMenuItem")!;
         _updateBanner = this.FindControl<Border>("UpdateBanner")!;
         _updateBannerText = this.FindControl<TextBlock>("UpdateBannerText")!;
+        _updateActionButton = this.FindControl<Button>("UpdateActionButton")!;
+        _dismissUpdateButton = this.FindControl<Button>("DismissUpdateButton")!;
+        _updateActionButton.Content = UpdateChecker.CanInstallUpdates ? "Install Update" : "Download";
         _mainPanel = this.FindControl<DockPanel>("MainPanel")!;
         _recentMenu = this.FindControl<MenuItem>("RecentMenu")!;
 
@@ -335,17 +344,15 @@ public partial class MainWindow : Window
         AddHandler(DragDrop.DropEvent, OnDrop, RoutingStrategies.Tunnel);
         AddHandler(DragDrop.DragOverEvent, OnDragOver, RoutingStrategies.Tunnel);
 
-        // Handle command line args
+        // Reopen files left open by an update, then handle command line args
         var args = Environment.GetCommandLineArgs();
-        if (args.Length > 1 && File.Exists(args[1]))
-        {
-            _ = OpenFileInNewTab(args[1]);
-        }
+        _ = OpenStartupFilesAsync(args.Length > 1 && File.Exists(args[1]) ? args[1] : null);
 
         // Start named pipe server for single-instance file opening
         StartPipeServer();
 
         _ = Task.Run(DeleteOrphanedTempFiles);
+        _ = Task.Run(UpdateChecker.DeleteDownloadedInstallers);
 
         Opened += (s, e) => _ = CheckForUpdatesOnStartupAsync();
     }
@@ -389,7 +396,7 @@ public partial class MainWindow : Window
             return false;
         }
 
-        if (!ignoreDismissed && _dismissedUpdateVersion == latest.ToString())
+        if (_installingUpdate || (!ignoreDismissed && _dismissedUpdateVersion == latest.ToString()))
             return true;
 
         _updateBannerText.Text = $"Simple Markdown Viewer {latest} is available. You have {UpdateChecker.CurrentVersion}.";
@@ -423,9 +430,126 @@ public partial class MainWindow : Window
             : "Automatic update checks turned off. Use Help > Check for Updates to check manually.";
     }
 
-    private void OnDownloadUpdateClick(object? sender, RoutedEventArgs e)
+    private async void OnDownloadUpdateClick(object? sender, RoutedEventArgs e)
     {
-        OpenLink(_latestKnownReleaseUrl ?? UpdateChecker.ReleasesPageUrl);
+        if (UpdateChecker.CanInstallUpdates)
+            await InstallUpdateAsync();
+        else
+            OpenLink(_latestKnownReleaseUrl ?? UpdateChecker.ReleasesPageUrl);
+    }
+
+    private async Task InstallUpdateAsync()
+    {
+        if (_installingUpdate) return;
+        _installingUpdate = true;
+        _updateActionButton.IsEnabled = false;
+        _dismissUpdateButton.IsEnabled = false;
+        try
+        {
+            // Ask again rather than trusting the cached result, which may be a day old
+            var release = await UpdateChecker.GetLatestReleaseAsync();
+            if (!UpdateChecker.IsNewerThanCurrent(release.Version))
+            {
+                _updateBanner.IsVisible = false;
+                _statusText.Text = $"You're up to date (version {UpdateChecker.CurrentVersion}).";
+                return;
+            }
+            if (release.WindowsInstaller is not { } installer)
+            {
+                // Release has no verifiable Windows installer; let the user get it themselves
+                OpenLink(release.PageUrl);
+                return;
+            }
+
+            var downloading = $"Downloading Simple Markdown Viewer {release.Version}...";
+            _updateBannerText.Text = downloading;
+            var progress = new Progress<double>(p => _updateBannerText.Text = $"{downloading} {p * 100:0}%");
+            var installerPath = await UpdateChecker.DownloadInstallerAsync(installer, progress);
+
+            // Same prompt as closing the window, so unsaved edits aren't lost
+            if (!await ConfirmUnsavedChangesAsync())
+            {
+                _updateBannerText.Text = $"Simple Markdown Viewer {release.Version} is ready to install.";
+                return;
+            }
+
+            _updateBannerText.Text = $"Installing Simple Markdown Viewer {release.Version}...";
+            SaveFilesToReopen();
+            try
+            {
+                UpdateChecker.StartInstaller(installerPath);
+            }
+            catch
+            {
+                DeleteFilesToReopen();
+                throw;
+            }
+            _isClosingConfirmed = true;
+            Close();
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            _updateBannerText.Text = "The update needs administrator permission to install. Click Install Update to try again.";
+        }
+        catch (Exception ex)
+        {
+            _updateBannerText.Text = $"Couldn't install the update: {ex.Message}";
+        }
+        finally
+        {
+            _installingUpdate = false;
+            _updateActionButton.IsEnabled = true;
+            _dismissUpdateButton.IsEnabled = true;
+        }
+    }
+
+    private sealed record FilesToReopen(List<string> Files, string? SelectedFile);
+
+    /// <summary>Records the open files so the updated app can reopen them.</summary>
+    private void SaveFilesToReopen()
+    {
+        try
+        {
+            var files = _tabs.Where(t => !t.IsNewFile && File.Exists(t.FilePath)).Select(t => t.FilePath).ToList();
+            if (files.Count == 0)
+                return;
+
+            var selected = _selectedTabIndex >= 0 && _selectedTabIndex < _tabs.Count ? _tabs[_selectedTabIndex].FilePath : null;
+            Directory.CreateDirectory(SettingsDir);
+            File.WriteAllText(ReopenAfterUpdatePath, JsonSerializer.Serialize(new FilesToReopen(files, selected)));
+        }
+        catch { }
+    }
+
+    private static void DeleteFilesToReopen()
+    {
+        try { File.Delete(ReopenAfterUpdatePath); } catch { }
+    }
+
+    private async Task OpenStartupFilesAsync(string? commandLineFile)
+    {
+        FilesToReopen? reopen = null;
+        try
+        {
+            if (File.Exists(ReopenAfterUpdatePath))
+                reopen = JsonSerializer.Deserialize<FilesToReopen>(File.ReadAllText(ReopenAfterUpdatePath));
+        }
+        catch { }
+        // One shot: a later start shouldn't bring these back again
+        DeleteFilesToReopen();
+
+        if (reopen != null)
+        {
+            foreach (var file in reopen.Files.Where(File.Exists))
+                await OpenFileInNewTab(file);
+
+            var selected = _tabs.FindIndex(t => t.FilePath == reopen.SelectedFile);
+            if (selected >= 0 && commandLineFile == null)
+                SelectTab(selected);
+        }
+
+        if (commandLineFile != null)
+            await OpenFileInNewTab(commandLineFile);
     }
 
     private void OnDismissUpdateClick(object? sender, RoutedEventArgs e)
@@ -2276,38 +2400,43 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
 
     protected override async void OnClosing(WindowClosingEventArgs e)
     {
-        if (!_isClosingConfirmed)
+        if (!_isClosingConfirmed && _tabs.Any(t => t.IsModified))
         {
-            var modifiedTabs = _tabs.Where(t => t.IsModified).ToList();
-            if (modifiedTabs.Count > 0)
+            e.Cancel = true;
+            if (await ConfirmUnsavedChangesAsync())
             {
-                e.Cancel = true;
-                var names = string.Join(", ", modifiedTabs.Select(t => t.FileName));
-                var result = await ShowUnsavedChangesDialog(names);
-
-                var canClose = result != "Cancel";
-
-                if (result == "Save")
-                {
-                    foreach (var tab in modifiedTabs)
-                    {
-                        if (!await SaveTab(tab))
-                        {
-                            canClose = false;
-                            break;
-                        }
-                    }
-                }
-
-                if (canClose)
-                {
-                    _isClosingConfirmed = true;
-                    Close();
-                }
+                _isClosingConfirmed = true;
+                Close();
             }
         }
 
         base.OnClosing(e);
+    }
+
+    /// <summary>
+    /// Offers to save modified tabs before the app closes. False if the user cancels
+    /// or a save fails.
+    /// </summary>
+    private async Task<bool> ConfirmUnsavedChangesAsync()
+    {
+        var modifiedTabs = _tabs.Where(t => t.IsModified).ToList();
+        if (modifiedTabs.Count == 0)
+            return true;
+
+        var names = string.Join(", ", modifiedTabs.Select(t => t.FileName));
+        var result = await ShowUnsavedChangesDialog(names);
+        if (result == "Cancel")
+            return false;
+
+        if (result == "Save")
+        {
+            foreach (var tab in modifiedTabs)
+            {
+                if (!await SaveTab(tab))
+                    return false;
+            }
+        }
+        return true;
     }
 
     protected override void OnClosed(EventArgs e)

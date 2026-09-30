@@ -136,3 +136,11 @@ Root: HKCR; Subkey: ".mermaid\OpenWithProgids"; ValueType: string; ValueName: "S
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+; The app's Install Update runs this installer with /SILENT /relaunch=1 and closes, so start it again afterwards
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait runasoriginaluser; Check: RelaunchRequested
+
+[Code]
+function RelaunchRequested: Boolean;
+begin
+  Result := WizardSilent and (ExpandConstant('{param:relaunch|0}') = '1');
+end;
