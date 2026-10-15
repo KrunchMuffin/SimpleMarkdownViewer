@@ -30,7 +30,7 @@ Get the latest version from [Releases](https://github.com/KrunchMuffin/SimpleMar
 scoop bucket add dabworx https://github.com/KrunchMuffin/scoop-bucket
 scoop install dabworx/simplemarkdownviewer
 
-# winget (once the package is approved; see the pull request linked in the release notes)
+# winget (once microsoft/winget-pkgs approves the package)
 winget install DABWorx.SimpleMarkdownViewer
 ```
 
