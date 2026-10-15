@@ -24,6 +24,45 @@
     // re-render diagrams whose source actually changed
     let diagramCache = new Map();
 
+    // Mermaid (3.5 MB) and KaTeX are loaded the first time a document needs them,
+    // so plain documents and tab switches don't pay for parsing them
+    const libraryLoads = new Map();
+
+    function loadLibrary(src) {
+        if (!libraryLoads.has(src)) {
+            libraryLoads.set(src, new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                // Only nonced scripts may run under the page's CSP
+                script.nonce = hostToken;
+                script.src = src;
+                script.onload = () => resolve();
+                script.onerror = () => {
+                    libraryLoads.delete(src);
+                    reject(new Error('Failed to load ' + src));
+                };
+                document.head.appendChild(script);
+            }));
+        }
+        return libraryLoads.get(src);
+    }
+
+    let mermaidReady = null;
+
+    function ensureMermaid() {
+        if (!mermaidReady) {
+            mermaidReady = loadLibrary(root.dataset.mermaidSrc).then(() => {
+                mermaid.initialize({
+                    startOnLoad: false,
+                    theme: root.dataset.mermaidTheme || 'default',
+                    // strict: diagram labels are escaped and click directives are ignored
+                    securityLevel: 'strict'
+                });
+            });
+            mermaidReady.catch(() => { mermaidReady = null; });
+        }
+        return mermaidReady;
+    }
+
     function escapeHtml(value) {
         const div = document.createElement('div');
         div.textContent = value || '';
@@ -60,6 +99,20 @@
     async function renderMermaidDiagrams(generation) {
         const diagrams = Array.from(document.querySelectorAll('.mermaid:not(.mermaid-error):not([data-processed])'))
             .filter(el => !el.querySelector('svg'));
+        if (diagrams.length === 0) return;
+
+        try {
+            await ensureMermaid();
+        } catch (e) {
+            if (generation !== renderGeneration) return;
+            console.error('Mermaid load error:', e);
+            for (const el of diagrams) {
+                el.classList.add('mermaid-error');
+                el.innerHTML = '<strong>Mermaid failed to load</strong><pre>' + escapeHtml(e.message) + '</pre>';
+            }
+            return;
+        }
+        if (generation !== renderGeneration) return;
 
         for (const el of diagrams) {
             if (generation !== renderGeneration) return;
@@ -93,6 +146,15 @@
         });
     }
 
+    function renderMathElements(generation) {
+        if (!document.querySelector('.math-display, .math-inline')) return;
+        loadLibrary(root.dataset.katexSrc).then(() => {
+            if (generation !== renderGeneration) return;
+            renderMath('.math-display', true);
+            renderMath('.math-inline', false);
+        }).catch(e => console.error('KaTeX load error:', e));
+    }
+
     function renderMath(selector, displayMode) {
         document.querySelectorAll(selector).forEach((el) => {
             try {
@@ -116,20 +178,10 @@
         });
 
         // Render preprocessed math elements
-        if (typeof katex !== 'undefined') {
-            renderMath('.math-display', true);
-            renderMath('.math-inline', false);
-        }
+        renderMathElements(generation);
     }
 
     function initialize() {
-        mermaid.initialize({
-            startOnLoad: false,
-            theme: root.dataset.mermaidTheme || 'default',
-            // strict: diagram labels are escaped and click directives are ignored
-            securityLevel: 'strict'
-        });
-
         renderContent();
 
         // Tell the host which render this page belongs to, so it only pushes

@@ -47,7 +47,7 @@ internal static class PreviewPage
         var html = new StringBuilder(contentHtml.Length + 4096);
         html.Append($"""
             <!DOCTYPE html>
-            <html lang="en" data-theme="{theme}" data-mermaid-theme="{mermaidTheme}"{rootClass}>
+            <html lang="en" data-theme="{theme}" data-mermaid-theme="{mermaidTheme}" data-mermaid-src="{AssetUrl("libs/mermaid.min.js")}" data-katex-src="{AssetUrl("libs/katex/katex.min.js")}"{rootClass}>
             <head>
                 <meta charset="UTF-8">
 
@@ -72,12 +72,11 @@ internal static class PreviewPage
             {options.CustomCss}
                 <link rel="stylesheet" href="{AssetUrl("preview/print.css")}">
 
-                <script nonce="{nonce}" src="{AssetUrl("libs/mermaid.min.js")}"></script>
+                <!-- Mermaid and KaTeX are large and load on demand from preview.js -->
                 <script nonce="{nonce}" src="{AssetUrl("libs/hljs/highlight.min.js")}"></script>
                 <script nonce="{nonce}" src="{AssetUrl("libs/hljs/languages/sql.min.js")}"></script>
                 <script nonce="{nonce}" src="{AssetUrl("libs/hljs/languages/powershell.min.js")}"></script>
                 <script nonce="{nonce}" src="{AssetUrl("libs/hljs/languages/csharp.min.js")}"></script>
-                <script nonce="{nonce}" src="{AssetUrl("libs/katex/katex.min.js")}"></script>
             </head>
             <body>
                 <article id="content" class="markdown-body">

@@ -26,7 +26,8 @@ class Program
                     using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.Out);
                     client.Connect(3000);
                     using var writer = new StreamWriter(client);
-                    writer.WriteLine(args[0]);
+                    // The running instance has its own working directory, so send an absolute path
+                    writer.WriteLine(Path.GetFullPath(args[0]));
                     writer.Flush();
                 }
                 catch { /* If pipe fails, just exit */ }

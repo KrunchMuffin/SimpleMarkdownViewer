@@ -68,6 +68,7 @@ public partial class MainWindow : Window
     private static readonly TimeSpan UpdateCheckInterval = TimeSpan.FromDays(1);
     private bool _installingUpdate;
     private bool _webViewReady = false;
+    private bool _startupFilesPending;
     private string? _welcomeTempHtmlPath;
     private int _renderVersion;
 
@@ -321,8 +322,8 @@ public partial class MainWindow : Window
         LoadSettings();
         UpdateRecentMenu();
 
-        // Set up AvaloniaEdit TextMate for markdown highlighting
-        SetupTextMateTheme();
+        // Editor colors now; TextMate highlighting is installed when edit mode is first used
+        ApplyEditorColors();
 
         // Set up editor context menu
         SetupEditorContextMenu();
@@ -346,7 +347,10 @@ public partial class MainWindow : Window
 
         // Reopen files left open by an update, then handle command line args
         var args = Environment.GetCommandLineArgs();
-        _ = OpenStartupFilesAsync(args.Length > 1 && File.Exists(args[1]) ? args[1] : null);
+        var commandLineFile = args.Length > 1 && File.Exists(args[1]) ? args[1] : null;
+        // Don't flash the welcome page when a file is about to replace it
+        _startupFilesPending = commandLineFile != null || File.Exists(ReopenAfterUpdatePath);
+        _ = OpenStartupFilesAsync(commandLineFile);
 
         // Start named pipe server for single-instance file opening
         StartPipeServer();
@@ -550,6 +554,10 @@ public partial class MainWindow : Window
 
         if (commandLineFile != null)
             await OpenFileInNewTab(commandLineFile);
+
+        _startupFilesPending = false;
+        if (_tabs.Count == 0)
+            RefreshPreview();
     }
 
     private void OnDismissUpdateClick(object? sender, RoutedEventArgs e)
@@ -626,6 +634,10 @@ public partial class MainWindow : Window
         }, ct);
     }
 
+    /// <summary>
+    /// Loads the editor's TextMate grammar and theme. The grammar registry takes a while
+    /// to load, so this is deferred until edit mode is first turned on.
+    /// </summary>
     private void SetupTextMateTheme()
     {
         _textMateInstallation?.Dispose();
@@ -637,8 +649,22 @@ public partial class MainWindow : Window
         {
             _textMateInstallation.SetGrammar(registryOptions.GetScopeByLanguageId(mdLang.Id));
         }
+        ApplyEditorColors();
+    }
+
+    private void ApplyEditorColors()
+    {
         _textEditor.Background = new SolidColorBrush(Color.Parse(_isDarkMode ? "#1e1e1e" : "#ffffff"));
         _textEditor.Foreground = new SolidColorBrush(Color.Parse(_isDarkMode ? "#d4d4d4" : "#1e1e1e"));
+    }
+
+    /// <summary>Re-themes the editor; installs syntax highlighting only if it was already in use.</summary>
+    private void UpdateEditorTheme()
+    {
+        if (_textMateInstallation != null)
+            SetupTextMateTheme();
+        else
+            ApplyEditorColors();
     }
 
     private void SetupEditorContextMenu()
@@ -1153,6 +1179,10 @@ public partial class MainWindow : Window
 
     private async Task OpenFileInNewTab(string filePath)
     {
+        // A bare filename from the command line has no directory to resolve links against,
+        // and the same file given two ways must land in the same tab
+        filePath = Path.GetFullPath(filePath);
+
         // Check if already open
         for (int i = 0; i < _tabs.Count; i++)
         {
@@ -1454,6 +1484,8 @@ public partial class MainWindow : Window
             _editorSplitter.IsVisible = true;
             _editModeMenuItem.Header = "Exit _Edit Mode";
 
+            if (_textMateInstallation == null)
+                SetupTextMateTheme();
             LoadCurrentTabIntoEditor();
             FocusEditorWhenShown();
             UpdatePreviewEditModeLabel();
@@ -1929,7 +1961,7 @@ public partial class MainWindow : Window
             Spacing = 8
         };
         info.Children.Add(new TextBlock { Text = "Simple Markdown Viewer", FontSize = 20, FontWeight = Avalonia.Media.FontWeight.Bold, HorizontalAlignment = HorizontalAlignment.Center });
-        info.Children.Add(new TextBlock { Text = "Version 1.5.2", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
+        info.Children.Add(new TextBlock { Text = "Version 1.6.0", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "A lightweight markdown and Mermaid viewer/editor\nwith live preview, tabs, custom CSS, and dark mode.", TextAlignment = Avalonia.Media.TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center });
         info.Children.Add(new TextBlock { Text = "Built with Avalonia UI, WebView2, and Markdig", FontSize = 11, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center });
 
@@ -1961,7 +1993,7 @@ public partial class MainWindow : Window
         SaveSettings();
 
         // Update editor theme
-        SetupTextMateTheme();
+        UpdateEditorTheme();
 
         // Update tab button colors and text
         for (int i = 0; i < _tabs.Count; i++)
@@ -2307,7 +2339,7 @@ hr {{ border: 0; height: 1px; background-color: {borderColor}; margin: 24px 0; }
     {
         if (_selectedTabIndex >= 0 && _selectedTabIndex < _tabs.Count)
             ShowTabPreview(_tabs[_selectedTabIndex]);
-        else
+        else if (!_startupFilesPending)
             ShowWelcome();
     }
 

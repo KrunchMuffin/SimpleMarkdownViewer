@@ -1,9 +1,16 @@
 # Changelog
 
-## Unreleased
+## 1.6.0 - 2026-10-14
 
 ### Added
 - On Windows, the update notice's Install Update button now downloads and installs the new version for you, then restarts the app, instead of opening the release page. The files you had open are reopened after the restart. The download is checked against the SHA-256 checksum published with the release before it runs, and you're asked to save any unsaved changes first. Windows asks for administrator permission to install. The portable build, macOS and Linux still open the release page.
+
+### Fixed
+- Opening a file by a relative path from the command line (for example `SimpleMarkdownViewer notes.md` in a terminal) crashed at startup. A relative path handed to an already-running instance is now resolved against that terminal's folder as well.
+
+### Changed
+- Faster startup. The app is precompiled for its platform at build time, the editor's syntax highlighting is loaded the first time you enter edit mode, and the Mermaid and KaTeX libraries are loaded only for documents that use diagrams or math. Switching tabs and changing the theme are quicker for the same reason, and the welcome page no longer flashes before a file opened at startup.
+- Updated Avalonia to 12.1.4.
 
 ## 1.5.2 - 2026-09-27
 
