@@ -70,10 +70,18 @@ jobs:
           & $iscc installer.iss
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
+      # Portable copy for Scoop and for anyone who doesn't want an installer; the app
+      # treats a copy with no uninstall entry as portable and skips in-app installs
+      - name: Build portable zip
+        shell: pwsh
+        run: Compress-Archive -Path publish\* -DestinationPath "SimpleMarkdownViewer-${{ needs.prepare.outputs.version }}-win-x64.zip" -CompressionLevel Optimal
+
       - uses: actions/upload-artifact@v7
         with:
           name: dist-windows
-          path: installer/SimpleMarkdownViewer-Setup-${{ needs.prepare.outputs.version }}.exe
+          path: |
+            installer/SimpleMarkdownViewer-Setup-${{ needs.prepare.outputs.version }}.exe
+            SimpleMarkdownViewer-${{ needs.prepare.outputs.version }}-win-x64.zip
           if-no-files-found: error
 
   macos:
@@ -298,6 +306,7 @@ jobs:
 
           sha() { sha256sum "dist/$1" | cut -d' ' -f1; }
           WIN="SimpleMarkdownViewer-Setup-$VERSION.exe"
+          WIN_ZIP="SimpleMarkdownViewer-$VERSION-win-x64.zip"
           MAC_ARM="SimpleMarkdownViewer-$VERSION-macos-arm64.dmg"
           MAC_X64="SimpleMarkdownViewer-$VERSION-macos-x64.dmg"
           DEB="simplemarkdownviewer_${VERSION}_amd64.deb"
@@ -309,6 +318,7 @@ jobs:
           | Platform | File | SHA-256 |
           |---|---|---|
           | Windows 10 and 11 | \`$WIN\` | \`$(sha $WIN)\` |
+          | Windows, portable (no installer) | \`$WIN_ZIP\` | \`$(sha $WIN_ZIP)\` |
           | macOS 14+, Apple Silicon | \`$MAC_ARM\` | \`$(sha $MAC_ARM)\` |
           | macOS 14+, Intel | \`$MAC_X64\` | \`$(sha $MAC_X64)\` |
           | Ubuntu, Debian | \`$DEB\` | \`$(sha $DEB)\` |

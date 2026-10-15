@@ -1,0 +1,47 @@
+name: Publish to winget
+
+# When a release is published (a draft from release.yml is made public), open a
+# version-bump pull request in microsoft/winget-pkgs for DABWorx.SimpleMarkdownViewer.
+#
+# Needs the WINGET_TOKEN repository secret: a GitHub personal access token with the
+# public_repo scope (classic) for the account that will own the pull request.
+# wingetcreate forks winget-pkgs into that account if needed. Without the secret the
+# job is skipped.
+#
+# The package must already exist in winget-pkgs; the first version is submitted by
+# hand from packaging/winget (see packaging/README.md).
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Published release tag to submit, such as v1.6.0'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  winget:
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: windows-latest
+    env:
+      WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+      TAG: ${{ inputs.tag || github.event.release.tag_name }}
+    steps:
+      - name: Submit the version bump
+        if: env.WINGET_TOKEN != ''
+        shell: pwsh
+        run: |
+          $version = $env:TAG.TrimStart('v')
+          $url = "https://github.com/${{ github.repository }}/releases/download/$env:TAG/SimpleMarkdownViewer-Setup-$version.exe"
+          Invoke-WebRequest -Uri https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+          .\wingetcreate.exe update DABWorx.SimpleMarkdownViewer --version $version --urls $url --submit --token $env:WINGET_TOKEN
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          "Opened a pull request in microsoft/winget-pkgs for $version" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Skipped
+        if: env.WINGET_TOKEN == ''
+        run: echo "WINGET_TOKEN secret is not set; nothing submitted to winget." >> $GITHUB_STEP_SUMMARY

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- A portable Windows download (`SimpleMarkdownViewer-<version>-win-x64.zip`): unzip and run, no installer. Portable copies open the release page instead of installing updates in-app.
+- Package manager manifests for winget and Scoop under `packaging/`, and a workflow that submits each published release to winget.
+
 ## 1.6.0 - 2026-10-14
 
 ### Added
