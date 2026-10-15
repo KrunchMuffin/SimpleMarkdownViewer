@@ -36,13 +36,12 @@ newer version in Apps & Features and simply reports it as installed.
 updates itself: `checkver` reads the latest GitHub release and `autoupdate`
 rewrites the URL and hash, so bucket bots keep it current without further work.
 
-Options for where it lives:
-
-- A pull request to the [Extras bucket](https://github.com/ScoopInstaller/Extras)
-  (`bucket/simplemarkdownviewer.json`), which anyone can install from with
-  `scoop install extras/simplemarkdownviewer`.
-- A bucket of our own: a repository holding `bucket/simplemarkdownviewer.json`,
-  installed with `scoop bucket add dabworx <repo url>` then
-  `scoop install simplemarkdownviewer`.
+It lives in our own bucket, [KrunchMuffin/scoop-bucket](https://github.com/KrunchMuffin/scoop-bucket)
+(`bucket/simplemarkdownviewer.json`), whose Excavator workflow runs `checkver -u` every
+few hours and commits new versions. Users install with
+`scoop bucket add dabworx https://github.com/KrunchMuffin/scoop-bucket` then
+`scoop install dabworx/simplemarkdownviewer`. The copy here is the reference; edit the
+bucket's copy for anything other than version and hash. The official Extras bucket
+requires roughly 100 stars or 50 forks, so it's an option for later.
 
 Test a manifest without a bucket: `scoop install .\packaging\scoop\simplemarkdownviewer.json`.

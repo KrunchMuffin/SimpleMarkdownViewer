@@ -17,10 +17,24 @@ Get the latest version from [Releases](https://github.com/KrunchMuffin/SimpleMar
 | Platform | Download | Notes |
 |----------|----------|-------|
 | Windows 10 and 11 | `SimpleMarkdownViewer-Setup-X.Y.Z.exe` | Installer; can set up file associations |
+| Windows, portable | `SimpleMarkdownViewer-X.Y.Z-win-x64.zip` | Unzip and run; no installer, no file associations |
 | macOS 14 or later, Apple Silicon | `SimpleMarkdownViewer-X.Y.Z-macos-arm64.dmg` | Drag the app to Applications |
 | macOS 14 or later, Intel | `SimpleMarkdownViewer-X.Y.Z-macos-x64.dmg` | Drag the app to Applications |
 | Ubuntu and Debian | `simplemarkdownviewer_X.Y.Z_amd64.deb` | Installs WebKitGTK for you |
 | Other Linux | `SimpleMarkdownViewer-X.Y.Z-linux-x86_64.AppImage` | Needs WebKitGTK 4.1 (see [Platform Notes](#platform-notes)) |
+
+**Windows package managers:**
+
+```powershell
+# Scoop
+scoop bucket add dabworx https://github.com/KrunchMuffin/scoop-bucket
+scoop install dabworx/simplemarkdownviewer
+
+# winget (once the package is approved; see the pull request linked in the release notes)
+winget install DABWorx.SimpleMarkdownViewer
+```
+
+The Scoop package is the portable build, so it updates with `scoop update simplemarkdownviewer` rather than from inside the app.
 
 macOS and Linux downloads are available from version 1.5.2 on. They're newer than the Windows version, so please [open an issue](https://github.com/KrunchMuffin/SimpleMarkdownViewer/issues) if something doesn't work.
 
