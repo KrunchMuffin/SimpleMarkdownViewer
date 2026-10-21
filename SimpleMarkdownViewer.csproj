@@ -26,7 +26,7 @@
     <PackageReference Include="Avalonia.Controls.WebView" Version="12.1.1" />
 
     <!-- Markdown parsing -->
-    <PackageReference Include="Markdig" Version="1.4.0" />
+    <PackageReference Include="Markdig" Version="1.4.2" />
 
     <!-- Code editor -->
     <PackageReference Include="Avalonia.AvaloniaEdit" Version="12.0.0" />
