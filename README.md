@@ -115,7 +115,7 @@ You can check manually with **Help > Check for Updates**, or turn automatic chec
 ## Platform Notes
 
 - **Windows:** Uses WebView2, which is pre-installed on Windows 10 and 11.
-- **macOS:** Needs macOS 14 or later and uses the built-in WKWebView. Double-clicking a markdown file in Finder doesn't open it in the app yet; use **File > Open** or drag the file onto the window.
+- **macOS:** Needs macOS 14 or later and uses the built-in WKWebView. Mermaid diagrams need macOS 14.4 or later. Double-clicking a markdown file in Finder doesn't open it in the app yet; use **File > Open** or drag the file onto the window.
 - **Linux:** Needs WebKitGTK 4.1. The .deb installs it for you; for the AppImage or a source build, install it with:
   - Ubuntu/Debian: `sudo apt install libwebkit2gtk-4.1-0`
   - Fedora: `sudo dnf install webkit2gtk4.1`

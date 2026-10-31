@@ -24,7 +24,7 @@
     // re-render diagrams whose source actually changed
     let diagramCache = new Map();
 
-    // Mermaid (3.5 MB) and KaTeX are loaded the first time a document needs them,
+    // Mermaid (5.5 MB) and KaTeX are loaded the first time a document needs them,
     // so plain documents and tab switches don't pay for parsing them
     const libraryLoads = new Map();
 
@@ -54,6 +54,10 @@
                 mermaid.initialize({
                     startOnLoad: false,
                     theme: root.dataset.mermaidTheme || 'default',
+                    // Mermaid 12 defaults to ELK and the neo look, which relay out and
+                    // shrink existing diagrams; a diagram's own config can still opt in
+                    layout: 'dagre',
+                    look: 'classic',
                     // strict: diagram labels are escaped and click directives are ignored
                     securityLevel: 'strict'
                 });

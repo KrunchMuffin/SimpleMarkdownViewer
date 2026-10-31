@@ -1,10 +1,14 @@
 # Changelog
 
-## Unreleased
+## 1.7.0 - 2026-10-31
 
 ### Added
 - A portable Windows download (`SimpleMarkdownViewer-<version>-win-x64.zip`): unzip and run, no installer. Portable copies open the release page instead of installing updates in-app.
 - Package manager manifests for winget and Scoop under `packaging/`, and a workflow that submits each published release to winget.
+
+### Changed
+- Updated Markdig to 1.5.1, which includes several markdown parsing fixes, Mermaid to 12.2.0 and KaTeX to 0.19.1. Existing diagrams keep their current look and layout. A diagram can opt in to the new Mermaid look or ELK layout through its own `config` block.
+- On macOS, Mermaid diagrams now need macOS 14.4 or later.
 
 ## 1.6.0 - 2026-10-14
 

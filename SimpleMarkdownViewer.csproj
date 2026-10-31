@@ -11,9 +11,9 @@
     <LangVersion>latest</LangVersion>
     <!-- Precompile for the target platform at publish time; cuts startup by about a third -->
     <PublishReadyToRun>true</PublishReadyToRun>
-    <Version>1.6.0</Version>
-    <AssemblyVersion>1.6.0.0</AssemblyVersion>
-    <FileVersion>1.6.0.0</FileVersion>
+    <Version>1.7.0</Version>
+    <AssemblyVersion>1.7.0.0</AssemblyVersion>
+    <FileVersion>1.7.0.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -26,7 +26,7 @@
     <PackageReference Include="Avalonia.Controls.WebView" Version="12.1.1" />
 
     <!-- Markdown parsing -->
-    <PackageReference Include="Markdig" Version="1.4.0" />
+    <PackageReference Include="Markdig" Version="1.5.1" />
 
     <!-- Code editor -->
     <PackageReference Include="Avalonia.AvaloniaEdit" Version="12.0.0" />
