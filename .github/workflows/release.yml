@@ -74,14 +74,15 @@ jobs:
       # treats a copy with no uninstall entry as portable and skips in-app installs
       - name: Build portable zip
         shell: pwsh
-        run: Compress-Archive -Path publish\* -DestinationPath "SimpleMarkdownViewer-${{ needs.prepare.outputs.version }}-win-x64.zip" -CompressionLevel Optimal
+        run: Compress-Archive -Path publish\* -DestinationPath "installerSimpleMarkdownViewer-${{ needs.prepare.outputs.version }}-win-x64.zip" -CompressionLevel Optimal
 
+      # Both files share a folder so the artifact is flat; a release upload skips subfolders
       - uses: actions/upload-artifact@v7
         with:
           name: dist-windows
           path: |
             installer/SimpleMarkdownViewer-Setup-${{ needs.prepare.outputs.version }}.exe
-            SimpleMarkdownViewer-${{ needs.prepare.outputs.version }}-win-x64.zip
+            installer/SimpleMarkdownViewer-${{ needs.prepare.outputs.version }}-win-x64.zip
           if-no-files-found: error
 
   macos:
@@ -130,7 +131,7 @@ jobs:
       - name: Smoke test
         if: matrix.arch == 'arm64'
         run: |
-          "$APP/Contents/MacOS/SimpleMarkdownViewer" "$PWD/demo.md" > smoke.log 2>&1 &
+          "$APP/Contents/MacOS/SimpleMarkdownViewer" "$PWD/packaging/smoke-test.md" > smoke.log 2>&1 &
           PID=$!
           sleep 25
           screencapture -x smoke-macos.png || true
@@ -244,7 +245,7 @@ jobs:
           smoke() {
             name=$1; shift
             xvfb-run -a -s "-screen 0 1400x900x24" sh -c '
-              "$@" "$GITHUB_WORKSPACE/demo.md" > "smoke-$0.log" 2>&1 &
+              "$@" "$GITHUB_WORKSPACE/packaging/smoke-test.md" > "smoke-$0.log" 2>&1 &
               PID=$!
               sleep 25
               import -window root "smoke-$0.png" || true
