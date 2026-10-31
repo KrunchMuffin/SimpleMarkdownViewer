@@ -74,7 +74,7 @@ jobs:
       # treats a copy with no uninstall entry as portable and skips in-app installs
       - name: Build portable zip
         shell: pwsh
-        run: Compress-Archive -Path publish\* -DestinationPath "installerSimpleMarkdownViewer-${{ needs.prepare.outputs.version }}-win-x64.zip" -CompressionLevel Optimal
+        run: Compress-Archive -Path publish\* -DestinationPath "installer/SimpleMarkdownViewer-${{ needs.prepare.outputs.version }}-win-x64.zip" -CompressionLevel Optimal
 
       # Both files share a folder so the artifact is flat; a release upload skips subfolders
       - uses: actions/upload-artifact@v7
