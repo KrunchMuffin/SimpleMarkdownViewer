@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.1 - 2026-11-11
+
+### Changed
+- Updated Markdig to 1.6.0, Mermaid to 12.3.0 and Avalonia to 12.1.6.
+
 ## 1.7.0 - 2026-10-31
 
 ### Added
