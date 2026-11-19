@@ -203,6 +203,19 @@ Not supported yet: the app can't be set as the default for markdown files in Fin
 - [Mermaid](https://mermaid.js.org/) - Diagrams
 - [KaTeX](https://katex.org/) - Math rendering
 
+## Code Signing Policy
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+The Windows installer and the app it installs are built by GitHub Actions from this repository's source and signed only after a team member approves each release. Windows shows SignPath Foundation as the publisher. The macOS and Linux downloads aren't covered.
+
+- **Committers and reviewers:** [KrunchMuffin](https://github.com/KrunchMuffin)
+- **Approvers:** [KrunchMuffin](https://github.com/KrunchMuffin)
+
+## Privacy
+
+The app doesn't collect, store or send any personal information, and it has no telemetry or analytics. The only network request it makes on its own is the [update check](#update-checks), which asks GitHub for the latest release version at most once a day and can be turned off with **Help > Check for Updates Automatically**. GitHub's handling of these requests is covered by the [GitHub Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
+
 ## Contributing
 
 Bug reports, ideas, and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started, and please follow the [Code of Conduct](CODE_OF_CONDUCT.md).

@@ -257,6 +257,15 @@ kbd {
 .plus { color: var(--ink-2); margin: 0 3px; font-size: .85rem; }
 @media (max-width: 760px) { .keys { grid-template-columns: 1fr; } }
 
+/* Code signing policy and privacy */
+.policy { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 56px; align-items: start; }
+.policy h2 { font-size: clamp(1.6rem, 2.6vw, 2rem); }
+.policy p { color: var(--ink-2); max-width: 56ch; margin: 0 0 1em; }
+.policy dl { margin: 20px 0 0; }
+.policy dt { font-weight: 700; margin-top: 12px; }
+.policy dd { margin: 2px 0 0; color: var(--ink-2); }
+@media (max-width: 760px) { .policy { grid-template-columns: 1fr; gap: 40px; } }
+
 /* Other platforms */
 .platforms { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 56px; align-items: start; }
 .platforms p { color: var(--ink-2); max-width: 52ch; margin: 0 0 1em; }
@@ -345,7 +354,7 @@ A small, free **markdown and Mermaid viewer** for Windows, macOS and Linux. Pres
           <span><span data-dl-label>Download for Windows</span><small id="dl-meta">Free installer from GitHub</small></span>
         </a>
         <p class="get-meta">
-          <span id="ver">Windows 10 and 11.</span> MIT licensed.<br>
+          <span id="ver">Windows 10 and 11.</span> MIT licensed. <a href="#code-signing">Code signing policy</a>.<br>
           <span id="others">On a Mac or Linux? <a href="#other-platforms">Build it from source</a>.</span>
         </p>
       </div>
@@ -486,6 +495,28 @@ dotnet publish -c Release -r osx-arm64 --self-contained -o publish</pre>
     </div>
   </section>
 
+  <section class="block" id="code-signing" aria-labelledby="signing-h">
+    <div class="wrap policy">
+      <div>
+        <h2 id="signing-h">Code signing policy</h2>
+        <p>Free code signing provided by <a href="https://signpath.io">SignPath.io</a>, certificate by <a href="https://signpath.org">SignPath Foundation</a>.</p>
+        <p>The Windows installer and the app it installs are built by GitHub Actions from this repository's source and signed only after a team member approves each release. Windows shows SignPath Foundation as the publisher. The macOS and Linux downloads aren't covered.</p>
+        <dl>
+          <dt>Committers and reviewers</dt>
+          <dd><a href="https://github.com/KrunchMuffin">KrunchMuffin</a></dd>
+          <dt>Approvers</dt>
+          <dd><a href="https://github.com/KrunchMuffin">KrunchMuffin</a></dd>
+        </dl>
+      </div>
+      <div id="privacy">
+        <h2 id="privacy-h">Privacy</h2>
+        <p>The app doesn't collect, store or send any personal information, and it has no telemetry or analytics.</p>
+        <p>The only network request it makes on its own is the update check: at most once a day, it asks GitHub (<code>api.github.com</code>) for the latest release version. Nothing about you or your files is sent, though GitHub sees your IP address, as with any request. Turn it off with <strong>Help &gt; Check for Updates Automatically</strong>. Installing an update downloads the new installer from GitHub, and only when you click the button. GitHub's handling of these requests is covered by the <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub Privacy Statement</a>.</p>
+        <p>This website loads fonts from Google Fonts and asks GitHub for the latest release to point the download button at the right file.</p>
+      </div>
+    </div>
+  </section>
+
   <section class="closer" aria-labelledby="closer-h">
     <div class="wrap">
       <h2 id="closer-h">Make .md files open in something that reads them.</h2>
@@ -505,6 +536,8 @@ dotnet publish -c Release -r osx-arm64 --self-contained -o publish</pre>
       <a href="https://github.com/KrunchMuffin/SimpleMarkdownViewer/releases">Releases</a>
       <a href="https://github.com/KrunchMuffin/SimpleMarkdownViewer/blob/main/CHANGELOG.md">Changelog</a>
       <a href="https://github.com/KrunchMuffin/SimpleMarkdownViewer/issues">Report a bug</a>
+      <a href="#code-signing">Code signing policy</a>
+      <a href="#privacy">Privacy</a>
     </nav>
   </div>
 </footer>

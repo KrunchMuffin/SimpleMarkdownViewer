@@ -46,9 +46,18 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
+  # Releases are signed by SignPath in two stages: the app's own files before the
+  # installer is built around them, then the installer. Each signing request waits
+  # for an approver in SignPath's web app. Test builds, and any run before SignPath
+  # is set up (no SIGNPATH_ORGANIZATION_ID repo variable), skip signing.
   windows:
     needs: prepare
     runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      SIGN: ${{ needs.prepare.outputs.tag != '' && vars.SIGNPATH_ORGANIZATION_ID != '' }}
+      SIGNPATH_PROJECT: simplemarkdownviewer
+      SIGNPATH_POLICY: release-signing
     steps:
       - uses: actions/checkout@v7
 
@@ -58,6 +67,46 @@ jobs:
 
       - name: Publish
         run: dotnet publish -c Release -r win-x64 --self-contained -o publish
+
+      - name: Upload unsigned app files
+        id: unsigned-app
+        if: env.SIGN == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-app
+          path: |
+            publish/SimpleMarkdownViewer.exe
+            publish/SimpleMarkdownViewer.dll
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Sign the app files
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@4a84eb4ad763290f059275786f2deed97c2c672b # v3.1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY }}
+          artifact-configuration-slug: app-files
+          github-artifact-id: ${{ steps.unsigned-app.outputs.artifact-id }}
+          parameters: |
+            version: ${{ toJSON(env.VERSION) }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 7200
+          output-artifact-directory: signed-app
+
+      # The installer and the portable zip both pack whatever is in publish/
+      - name: Use the signed app files
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: |
+          foreach ($name in 'SimpleMarkdownViewer.exe', 'SimpleMarkdownViewer.dll') {
+            $sig = Get-AuthenticodeSignature "signed-app/$name"
+            if ($sig.Status -ne 'Valid') { throw "$name signature is $($sig.Status)" }
+            "$name signed by $($sig.SignerCertificate.Subject)"
+            Copy-Item "signed-app/$name" "publish/$name" -Force
+          }
 
       - name: Build installer
         shell: pwsh
@@ -69,6 +118,43 @@ jobs:
           }
           & $iscc installer.iss
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Upload unsigned installer
+        id: unsigned-installer
+        if: env.SIGN == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          path: installer/SimpleMarkdownViewer-Setup-${{ env.VERSION }}.exe
+          archive: false
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Sign the installer
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@4a84eb4ad763290f059275786f2deed97c2c672b # v3.1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.unsigned-installer.outputs.artifact-id }}
+          parameters: |
+            version: ${{ toJSON(env.VERSION) }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 7200
+          output-artifact-directory: signed-installer
+          skip-decompress: true
+
+      - name: Use the signed installer
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: |
+          $name = "SimpleMarkdownViewer-Setup-$env:VERSION.exe"
+          $sig = Get-AuthenticodeSignature "signed-installer/$name"
+          if ($sig.Status -ne 'Valid') { throw "installer signature is $($sig.Status)" }
+          "$name signed by $($sig.SignerCertificate.Subject)"
+          Copy-Item "signed-installer/$name" "installer/$name" -Force
 
       # Portable copy for Scoop and for anyone who doesn't want an installer; the app
       # treats a copy with no uninstall entry as portable and skips in-app installs

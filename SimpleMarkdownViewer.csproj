@@ -14,6 +14,11 @@
     <Version>1.7.1</Version>
     <AssemblyVersion>1.7.1.0</AssemblyVersion>
     <FileVersion>1.7.1.0</FileVersion>
+    <!-- Version resource fields that code signing checks (.github/signpath/app-files.xml):
+         the product name, and a product version without the "+commit" suffix -->
+    <Product>Simple Markdown Viewer</Product>
+    <Company>DAB Worx Inc.</Company>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>

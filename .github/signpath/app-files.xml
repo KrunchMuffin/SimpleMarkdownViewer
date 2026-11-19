@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration "app-files". SignPath keeps its own copy:
+  paste this into the SignPath project and keep the two in step.
+
+  release.yml uploads the app's own two files from the publish folder in one
+  zip, so one approval covers both. Everything else in that folder is .NET
+  runtime or third-party files, which are left as they are.
+
+  product-name and product-version are the metadata restrictions SignPath
+  Foundation requires: a file is refused unless its version resource says
+  Simple Markdown Viewer and matches the version the workflow passes in.
+  SimpleMarkdownViewer.csproj sets Product and keeps the commit hash out of
+  the product version so both match.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="SimpleMarkdownViewer.exe" product-name="Simple Markdown Viewer" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+    <pe-file path="SimpleMarkdownViewer.dll" product-name="Simple Markdown Viewer" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

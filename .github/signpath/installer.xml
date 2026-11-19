@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration "installer". SignPath keeps its own copy:
+  paste this into the SignPath project and keep the two in step.
+
+  release.yml uploads the Inno Setup installer as a bare file (archive: false),
+  so the root element is the installer itself, not a zip. installer.iss sets
+  VersionInfoProductTextVersion so the product version is exactly ${version};
+  the product name comes from AppName.
+
+  Untested: Inno Setup pads these version strings with trailing spaces (the
+  name reads as 60 characters, the version as 50). If SignPath compares them
+  without trimming, the first signing request will fail on this file.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <pe-file path="SimpleMarkdownViewer-Setup-${version}.exe" product-name="Simple Markdown Viewer" product-version="${version}">
+    <authenticode-sign />
+  </pe-file>
+</artifact-configuration>

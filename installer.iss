@@ -15,6 +15,9 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
+; Code signing checks the product version is exactly the release version (.github/signpath/installer.xml)
+VersionInfoVersion={#MyAppVersion}
+VersionInfoProductTextVersion={#MyAppVersion}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
