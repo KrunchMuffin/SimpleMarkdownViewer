@@ -203,6 +203,21 @@ Not supported yet: the app can't be set as the default for markdown files in Fin
 - [Mermaid](https://mermaid.js.org/) - Diagrams
 - [KaTeX](https://katex.org/) - Math rendering
 
+## Code Signing Policy
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+Code signing for the Windows downloads is being set up. Starting with the first release after SignPath Foundation approves Simple Markdown Viewer, the Windows installer and the app it installs will be built by GitHub Actions from this repository's source and signed only after a team member approves each release. Windows will then show SignPath Foundation as the publisher. Earlier releases aren't signed, and the macOS and Linux downloads aren't covered.
+
+- **Committers and reviewers:** [KrunchMuffin](https://github.com/KrunchMuffin)
+- **Approvers:** [KrunchMuffin](https://github.com/KrunchMuffin)
+
+## Privacy
+
+The app doesn't collect, store or send any personal information, and it has no telemetry or analytics. The only network request the app makes on its own is the [update check](#update-checks), which asks GitHub for the latest release version at most once a day and can be turned off with **Help > Check for Updates Automatically**. GitHub's handling of these requests is covered by the [GitHub Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
+
+The documents you open can make requests too. If a markdown file links to remote images, video, audio or embedded pages, or your [custom CSS](#custom-css) loads remote stylesheets or fonts, the preview fetches them from those sites when it renders. Those sites see your IP address and which files were requested, even with update checks turned off. Files that only use local or embedded content don't make these requests.
+
 ## Contributing
 
 Bug reports, ideas, and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started, and please follow the [Code of Conduct](CODE_OF_CONDUCT.md).
