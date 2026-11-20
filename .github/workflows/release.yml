@@ -46,11 +46,43 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
+  # The Windows files are signed with DAB Worx's Azure Artifact Signing certificate
+  # (packaging/windows/sign.ps1) when the repository has the secrets AZURE_TENANT_ID,
+  # AZURE_CLIENT_ID and AZURE_CLIENT_SECRET (CONTRIBUTING.md, "Signing"). A release with those
+  # secrets missing stops rather than publish unsigned files; a test build without them is unsigned.
   windows:
     needs: prepare
     runs-on: windows-latest
+    env:
+      # Read by sign.ps1 (through Azure's EnvironmentCredential), never printed
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      # 1: a release must be signed. 0: no sign-in here, so build unsigned. Empty: sign when
+      # signing.json is set up (a test build with the secrets).
+      SMV_SIGN: ${{ needs.prepare.outputs.tag != '' && '1' || (secrets.AZURE_CLIENT_SECRET == '' && '0' || '') }}
     steps:
       - uses: actions/checkout@v7
+
+      # Decided before the build so a missing setting stops a release at once
+      - name: Check signing
+        shell: pwsh
+        run: |
+          if ($env:SMV_SIGN -eq '0') {
+            $sign = $false
+          } else {
+            pwsh -NoProfile -File packaging/windows/sign.ps1 -Check
+            if ($LASTEXITCODE -eq 1) { exit 1 }
+            $sign = $LASTEXITCODE -eq 0
+            if (-not $sign -and $env:SMV_SIGN -eq '1') {
+              Write-Output '::error::A release must be signed, but signing is not set up (CONTRIBUTING.md, "Signing")'
+              exit 1
+            }
+          }
+          if (-not $sign) { Write-Output '::warning::Building UNSIGNED Windows files' }
+          "SIGN=$($sign.ToString().ToLower())" >> $env:GITHUB_ENV
+          # -Check's "not set up" exit code would otherwise fail this step
+          $global:LASTEXITCODE = 0
 
       - uses: actions/setup-dotnet@v6
         with:
@@ -59,6 +91,14 @@ jobs:
       - name: Publish
         run: dotnet publish -c Release -r win-x64 --self-contained -o publish
 
+      # Before packaging, so the installer and the portable zip both get the signed files
+      - name: Sign the app
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: ./packaging/windows/sign.ps1 publish/SimpleMarkdownViewer.exe publish/SimpleMarkdownViewer.dll
+
+      # When signing, Inno Setup signs the uninstaller and the installer through sign.ps1
+      # ($q is a quote and $f the file, filled in by Inno Setup)
       - name: Build installer
         shell: pwsh
         run: |
@@ -67,7 +107,12 @@ jobs:
             choco install innosetup -y --no-progress
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           }
-          & $iscc installer.iss
+          $isccArgs = @()
+          if ($env:SIGN -eq 'true') {
+            $script = Join-Path $PWD 'packaging\windows\sign.ps1'
+            $isccArgs += '/DSign', "/Ssmvsign=pwsh -NoProfile -File `$q$script`$q `$f"
+          }
+          & $iscc @isccArgs installer.iss
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       # Portable copy for Scoop and for anyone who doesn't want an installer; the app

@@ -27,6 +27,12 @@ SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64compatible
+; Release builds define Sign and pass the "smvsign" tool (packaging/windows/sign.ps1) with /S, so
+; the installer and its uninstaller are signed. Plain local builds stay unsigned.
+#ifdef Sign
+SignTool=smvsign
+SignedUninstaller=yes
+#endif
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

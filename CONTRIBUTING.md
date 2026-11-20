@@ -57,6 +57,26 @@ For maintainers. Releases are built by [`release.yml`](.github/workflows/release
 
 To try the workflow without releasing, run it from the Actions tab and leave the tag empty. The downloads are kept as artifacts of that run.
 
+### Signing
+
+The Windows files are signed with DAB Worx's certificate in Microsoft's Azure Artifact Signing (called Trusted Signing until 2025), so Windows names DAB Worx Inc. as the publisher. `release.yml` signs `SimpleMarkdownViewer.exe` and `SimpleMarkdownViewer.dll` before they go into the installer and the portable zip, and Inno Setup signs the uninstaller and the installer. All of it goes through [`packaging/windows/sign.ps1`](packaging/windows/sign.ps1), which uses Microsoft's `ArtifactSigning` PowerShell module and checks that each file ends up with a valid, timestamped signature. The macOS and Linux builds aren't signed this way.
+
+Which certificate is set in [`packaging/windows/signing.json`](packaging/windows/signing.json): the account's endpoint ("Account URI"), the account name and the certificate profile name. None of them is a secret. `pwsh packaging/windows/sign.ps1 -Check` says whether signing is set up.
+
+GitHub signs in to Azure as an app registration that holds only the **Artifact Signing Certificate Profile Signer** role on the signing account. To set it up, run this once on your computer after `Connect-AzAccount`:
+
+```powershell
+pwsh packaging/windows/setup-github-signing.ps1
+```
+
+It makes the app registration "Simple Markdown Viewer GitHub signing" (or reuses it), gives it the role, makes a client secret good for two years, and stores `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` and `AZURE_CLIENT_SECRET` as the repository's Actions secrets with the GitHub CLI. The secret is never printed or saved to a file. Run it again before the date it prints to give GitHub a new secret.
+
+A tagged release without those secrets stops at the Windows build rather than publish unsigned files. A test build without them builds unsigned, with a warning.
+
+To sign on your own computer, install the .NET 8 runtime (`winget install Microsoft.DotNet.Runtime.8`), sign in once with `az login` or `Connect-AzAccount` as an account that has the signer role, then run `pwsh packaging/windows/sign.ps1 <file>`.
+
+Signed files can still get a SmartScreen warning at first; SmartScreen also goes by how many people have run a program, and that builds up after each release.
+
 ## Code of Conduct
 
 This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). By participating, you agree to uphold it.
