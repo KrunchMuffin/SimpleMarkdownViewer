@@ -203,14 +203,9 @@ Not supported yet: the app can't be set as the default for markdown files in Fin
 - [Mermaid](https://mermaid.js.org/) - Diagrams
 - [KaTeX](https://katex.org/) - Math rendering
 
-## Code Signing Policy
+## Download Verification
 
-Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
-
-Code signing for the Windows downloads is being set up. Starting with the first release after SignPath Foundation approves Simple Markdown Viewer, the Windows installer and the app it installs will be built by GitHub Actions from this repository's source and signed only after a team member approves each release. Windows will then show SignPath Foundation as the publisher. Earlier releases aren't signed, and the macOS and Linux downloads aren't covered.
-
-- **Committers and reviewers:** [KrunchMuffin](https://github.com/KrunchMuffin)
-- **Approvers:** [KrunchMuffin](https://github.com/KrunchMuffin)
+Download Simple Markdown Viewer from the [official GitHub release](https://github.com/KrunchMuffin/SimpleMarkdownViewer/releases/latest). To check a downloaded file, compare its SHA-256 checksum with the one listed for that file in the release notes.
 
 ## Privacy
 
