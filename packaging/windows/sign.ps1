@@ -107,7 +107,8 @@ if ($azureVars | Where-Object { [Environment]::GetEnvironmentVariable($_) }) {
         if ($name -ne 'AZURE_CLIENT_SECRET' -and $clean -notmatch '^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$') {
             throw "$name isn't a GUID ($($clean.Length) characters after trimming): store it again with setup-github-signing.ps1"
         }
-        if ($clean -ne $value) {
+        # Compared by length: PowerShell's -ne ignores a byte order mark, so it would call them equal
+        if ($clean.Length -ne $value.Length) {
             Write-Warning "$name had $($value.Length - $clean.Length) extra character(s) around it (whitespace or a byte order mark), which were removed"
             [Environment]::SetEnvironmentVariable($name, $clean)
         }

@@ -92,12 +92,17 @@ $values = [ordered]@{
     AZURE_CLIENT_SECRET = $secret
 }
 if (Get-Command gh -ErrorAction SilentlyContinue) {
+    # PowerShell writes piped text in $OutputEncoding, which can be UTF-8 with a byte order mark;
+    # gh would store that mark as part of each secret and Azure's sign-in rejects it.
+    $previousEncoding = $OutputEncoding
+    $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
     foreach ($key in $values.Keys) {
         # Through standard input, so the value isn't on a command line.
         $values[$key] | gh secret set $key --repo $Repo
         if ($LASTEXITCODE -ne 0) { throw "gh secret set $key failed (is gh signed in? gh auth login)" }
         Write-Host "set the GitHub secret $key"
     }
+    $OutputEncoding = $previousEncoding
 } else {
     $page = "https://github.com/$Repo/settings/secrets/actions/new"
     Write-Host "the GitHub CLI isn't installed, so each value goes to the clipboard for pasting at $page"
