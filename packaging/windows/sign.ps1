@@ -92,6 +92,28 @@ foreach ($p in $paths) {
     }
 }
 
+# An app registration's sign-in from the environment (GitHub Actions). A value stored with a
+# trailing newline or a byte order mark makes Azure's sign-in fail deep inside signtool with only
+# "Invalid tenant id", so stray characters are removed and the two IDs are checked here. The
+# values themselves are never printed.
+$azureVars = 'AZURE_TENANT_ID', 'AZURE_CLIENT_ID', 'AZURE_CLIENT_SECRET'
+if ($azureVars | Where-Object { [Environment]::GetEnvironmentVariable($_) }) {
+    foreach ($name in $azureVars) {
+        $value = [string][Environment]::GetEnvironmentVariable($name)
+        $clean = $value.Trim().Trim([char]0xFEFF).Trim()
+        if (-not $clean) {
+            throw "$name is empty: set all three of $($azureVars -join ', ') (CONTRIBUTING.md, `"Signing`")"
+        }
+        if ($name -ne 'AZURE_CLIENT_SECRET' -and $clean -notmatch '^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$') {
+            throw "$name isn't a GUID ($($clean.Length) characters after trimming): store it again with setup-github-signing.ps1"
+        }
+        if ($clean -ne $value) {
+            Write-Warning "$name had $($value.Length - $clean.Length) extra character(s) around it (whitespace or a byte order mark), which were removed"
+            [Environment]::SetEnvironmentVariable($name, $clean)
+        }
+    }
+}
+
 if (-not (Get-Module -ListAvailable -Name ArtifactSigning | Where-Object { $_.Version -eq $moduleVersion })) {
     Write-Host "installing the ArtifactSigning module $moduleVersion for this user"
     Install-Module -Name ArtifactSigning -RequiredVersion $moduleVersion -Scope CurrentUser -Repository PSGallery -Force
