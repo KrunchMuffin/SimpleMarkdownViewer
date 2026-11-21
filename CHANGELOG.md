@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.2 - 2026-11-20
+
+### Changed
+- The Windows installer, its uninstaller and the app are now signed by DAB Worx Inc., so Windows names DAB Worx as the publisher instead of warning about an unknown one. This includes the portable download. SmartScreen may still show a warning for a while after the release, until enough people have run it.
+
 ## 1.7.1 - 2026-11-11
 
 ### Changed

@@ -11,9 +11,9 @@
     <LangVersion>latest</LangVersion>
     <!-- Precompile for the target platform at publish time; cuts startup by about a third -->
     <PublishReadyToRun>true</PublishReadyToRun>
-    <Version>1.7.1</Version>
-    <AssemblyVersion>1.7.1.0</AssemblyVersion>
-    <FileVersion>1.7.1.0</FileVersion>
+    <Version>1.7.2</Version>
+    <AssemblyVersion>1.7.2.0</AssemblyVersion>
+    <FileVersion>1.7.2.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
