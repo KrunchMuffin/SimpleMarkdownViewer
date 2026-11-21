@@ -28,13 +28,13 @@ Get the latest version from [Releases](https://github.com/KrunchMuffin/SimpleMar
 ```powershell
 # Scoop
 scoop bucket add dabworx https://github.com/KrunchMuffin/scoop-bucket
-scoop install dabworx/simplemarkdownviewer
+scoop install dabworx/simple-markdown-viewer
 
 # winget (once microsoft/winget-pkgs approves the package)
 winget install DABWorx.SimpleMarkdownViewer
 ```
 
-The Scoop package is the portable build, so it updates with `scoop update simplemarkdownviewer` rather than from inside the app.
+The Scoop package is the portable build, so it updates with `scoop update simple-markdown-viewer` rather than from inside the app. It was called `simplemarkdownviewer` until 1.7.1; if you installed it under that name, run `scoop uninstall simplemarkdownviewer` and then `scoop install dabworx/simple-markdown-viewer`. Your settings are kept.
 
 macOS and Linux downloads are available from version 1.5.2 on. They're newer than the Windows version, so please [open an issue](https://github.com/KrunchMuffin/SimpleMarkdownViewer/issues) if something doesn't work.
 
